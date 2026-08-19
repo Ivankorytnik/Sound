@@ -14,7 +14,7 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">MVP / SPEECH TO TEXT</div>
-        <h1>РАСПОЗНАВАНИЕ<br><span>РЕЧИ ИЗ ФАЙЛА</span></h1>
+        <h1>РАСПОЗНАВАНИЕ<br><span>РЕЧИ</span></h1>
       </div>
       <div class="badge">LOCAL AI</div>
     </header>
@@ -23,24 +23,94 @@
       <div class="panel input-panel">
         <div class="panel-head">
           <span>01</span>
-          <h2>ЗАГРУЗИ ФАЙЛ</h2>
+          <h2>ИСТОЧНИК ЗВУКА</h2>
         </div>
 
-        <label class="dropzone" id="dropzone" for="fileInput">
-          <input
-            id="fileInput"
-            type="file"
-            accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.mp4"
-          />
-          <div class="drop-icon">＋</div>
-          <strong>ПЕРЕТАЩИ ФАЙЛ СЮДА</strong>
-          <span>или нажми, чтобы выбрать</span>
-          <small>MP3 · WAV · M4A · OGG · WEBM*</small>
-        </label>
+        <div class="mode-tabs" role="tablist" aria-label="Режим распознавания">
+          <button class="mode-tab active" id="liveModeBtn" type="button" data-mode="live" role="tab" aria-selected="true">ЖИВОЙ РАЗГОВОР</button>
+          <button class="mode-tab" id="fileModeBtn" type="button" data-mode="file" role="tab" aria-selected="false">ИЗ ФАЙЛА</button>
+        </div>
+
+        <section class="mode-section" id="liveMode">
+          <div class="live-hero">
+            <div class="live-kicker"><span class="live-dot"></span> ZOOM · ТОЛК · MEET · ЛЮБАЯ ВКЛАДКА</div>
+            <h3>ЗАХВАТ ЗВУКА<br>ВО ВРЕМЯ ЗВОНКА</h3>
+            <p>Нажми старт, выбери вкладку или экран с разговором и обязательно включи передачу аудио.</p>
+          </div>
+
+          <div class="capture-options">
+            <label class="switch-row">
+              <span>
+                <strong>ДОБАВИТЬ МОЙ МИКРОФОН</strong>
+                <small>Собеседники + твой голос в одной записи</small>
+              </span>
+              <input id="micToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+
+            <label class="switch-row">
+              <span>
+                <strong>РАСПОЗНАТЬ ПОСЛЕ СТОПА</strong>
+                <small>Автоматически запустить Whisper после звонка</small>
+              </span>
+              <input id="autoTranscribeToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+          </div>
+
+          <div class="capture-status idle" id="captureStatus">
+            <div class="capture-status-main">
+              <div>
+                <span class="capture-label">СТАТУС</span>
+                <strong id="captureStatusText">ГОТОВ К ЗАХВАТУ</strong>
+              </div>
+              <div class="record-timer" id="recordTimer">00:00</div>
+            </div>
+            <div class="source-statuses">
+              <div><span class="source-indicator" id="systemIndicator"></span><span id="systemStatus">Звук встречи: не подключён</span></div>
+              <div><span class="source-indicator" id="micIndicator"></span><span id="micStatus">Микрофон: не подключён</span></div>
+            </div>
+          </div>
+
+          <div class="capture-actions">
+            <button class="primary-btn" id="startCaptureBtn" type="button">
+              <span>НАЧАТЬ ЗАХВАТ</span>
+              <span class="arrow">●</span>
+            </button>
+            <button class="danger-btn hidden" id="stopCaptureBtn" type="button">
+              <span>ОСТАНОВИТЬ И СОХРАНИТЬ</span>
+              <span>■</span>
+            </button>
+          </div>
+
+          <div class="capture-help">
+            <strong>КАК ЗАХВАТИТЬ ЗВУК</strong>
+            <ol>
+              <li>Открой Zoom / Толк / встречу и вернись сюда.</li>
+              <li>Нажми «Начать захват».</li>
+              <li>Выбери вкладку, окно или экран с разговором.</li>
+              <li>В окне браузера включи «Поделиться аудио» / «Share audio».</li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="mode-section hidden" id="fileMode">
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <input
+              id="fileInput"
+              type="file"
+              accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.mp4"
+            />
+            <div class="drop-icon">＋</div>
+            <strong>ПЕРЕТАЩИ ФАЙЛ СЮДА</strong>
+            <span>или нажми, чтобы выбрать</span>
+            <small>MP3 · WAV · M4A · OGG · WEBM*</small>
+          </label>
+        </section>
 
         <div class="file-card hidden" id="fileCard">
           <div>
-            <div class="file-label">ФАЙЛ</div>
+            <div class="file-label" id="fileLabel">ФАЙЛ</div>
             <div class="file-name" id="fileName">—</div>
             <div class="file-meta" id="fileMeta">—</div>
           </div>
@@ -48,6 +118,7 @@
         </div>
 
         <audio id="audioPreview" class="audio-preview hidden" controls></audio>
+        <button class="secondary-btn recording-download hidden" id="downloadAudioBtn" type="button">СКАЧАТЬ ЗАПИСЬ РАЗГОВОРА</button>
 
         <div class="settings">
           <label>
@@ -93,7 +164,7 @@
           <div class="signal" aria-hidden="true">
             <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
           </div>
-          <p>После обработки здесь появится текст распознанной речи.</p>
+          <p>Здесь появится текст из файла или запись разговора после остановки захвата.</p>
         </div>
 
         <div class="result hidden" id="resultBlock">
@@ -120,7 +191,7 @@
 
     <footer>
       <span>Работает в браузере · без API-ключа</span>
-      <span>* Поддержка формата зависит от браузера</span>
+      <span>Захват экрана требует HTTPS · поддержка системного аудио зависит от браузера/ОС</span>
     </footer>
   </main>
 
