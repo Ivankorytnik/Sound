@@ -38,6 +38,41 @@
             <p>Нажми старт, выбери вкладку или экран с разговором и обязательно включи передачу аудио.</p>
           </div>
 
+          <div class="capture-source-mode" id="captureSourceMode">
+            <div class="capture-source-mode-head">
+              <div>
+                <strong>РЕЖИМ ВЫБОРА ИСТОЧНИКА</strong>
+                <small>Авто запоминает тип последнего источника. Ручной позволяет выбрать тип самому.</small>
+              </div>
+              <span class="capture-mode-badge" id="captureModeBadge">AUTO</span>
+            </div>
+
+            <label class="capture-mode-switch" for="autoCaptureToggle">
+              <span id="manualModeLabel">РУЧНОЙ</span>
+              <input id="autoCaptureToggle" type="checkbox" checked />
+              <i aria-hidden="true"></i>
+              <span id="autoModeLabel">АВТОЗАХВАТ</span>
+            </label>
+
+            <div class="capture-mode-hint" id="captureModeHint">
+              АВТО: предложу подходящий тип источника и сразу начну запись после подтверждения браузера.
+            </div>
+
+            <label class="manual-source hidden" id="manualSourceWrap">
+              <span>ЧТО ПРЕДЛОЖИТЬ ПЕРВЫМ</span>
+              <select id="manualSourceSelect">
+                <option value="browser">Вкладка браузера — Zoom Web / Толк / Meet</option>
+                <option value="window">Окно приложения — Zoom Desktop</option>
+                <option value="monitor">Экран целиком</option>
+              </select>
+            </label>
+
+            <div class="last-source" id="lastSourceRow">
+              <span>ПОСЛЕДНИЙ ИСТОЧНИК</span>
+              <strong id="lastSourceText">ещё не выбран</strong>
+            </div>
+          </div>
+
           <div class="capture-options">
             <label class="switch-row">
               <span>
@@ -112,7 +147,7 @@
 
           <div class="capture-actions">
             <button class="primary-btn" id="startCaptureBtn" type="button">
-              <span>НАЧАТЬ ЗАХВАТ</span>
+              <span id="startCaptureBtnText">НАЙТИ И НАЧАТЬ</span>
               <span class="arrow">●</span>
             </button>
             <button class="danger-btn hidden" id="stopCaptureBtn" type="button">
@@ -125,8 +160,9 @@
             <strong>КАК ЗАХВАТИТЬ ЗВУК</strong>
             <ol>
               <li>Открой Zoom / Толк / встречу и вернись сюда.</li>
-              <li>Нажми «Начать захват».</li>
-              <li>Выбери вкладку, окно или экран с разговором.</li>
+              <li>Выбери «Автозахват» или «Ручной».</li>
+              <li>Нажми «Найти и начать» / «Выбрать и начать».</li>
+              <li>Подтверди источник в системном окне браузера. Это обязательная защита браузера.</li>
               <li>В окне браузера включи «Поделиться аудио» / «Share audio».</li>
               <li>После звонка AI разделит удалённые голоса на Спикер 1 / 2 / 3 и подставит заданные имена.</li>
               <li>Прослушай первую реплику каждого спикера и при необходимости поменяй имена местами.</li>

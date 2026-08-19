@@ -36,6 +36,13 @@ const els = {
   fileModeBtn: document.querySelector('#fileModeBtn'),
   liveMode: document.querySelector('#liveMode'),
   fileMode: document.querySelector('#fileMode'),
+  autoCaptureToggle: document.querySelector('#autoCaptureToggle'),
+  captureModeBadge: document.querySelector('#captureModeBadge'),
+  captureModeHint: document.querySelector('#captureModeHint'),
+  manualSourceWrap: document.querySelector('#manualSourceWrap'),
+  manualSourceSelect: document.querySelector('#manualSourceSelect'),
+  lastSourceText: document.querySelector('#lastSourceText'),
+  startCaptureBtnText: document.querySelector('#startCaptureBtnText'),
   micToggle: document.querySelector('#micToggle'),
   autoTranscribeToggle: document.querySelector('#autoTranscribeToggle'),
   speakerLabelsToggle: document.querySelector('#speakerLabelsToggle'),
@@ -82,6 +89,88 @@ let capturedSpeakerFiles = null;
 let captureStartedAt = 0;
 let captureTimerId = null;
 let captureStopping = false;
+
+const CAPTURE_MODE_KEY = 'speechLabAutoCaptureMode';
+const LAST_DISPLAY_SURFACE_KEY = 'speechLabLastDisplaySurface';
+const LAST_DISPLAY_LABEL_KEY = 'speechLabLastDisplayLabel';
+
+function normalizeDisplaySurface(value) {
+  return ['browser', 'window', 'monitor'].includes(value) ? value : 'browser';
+}
+
+function displaySurfaceName(value) {
+  const names = { browser: 'вкладка браузера', window: 'окно приложения', monitor: 'экран' };
+  return names[normalizeDisplaySurface(value)];
+}
+
+function saveCaptureMode() {
+  try {
+    localStorage.setItem(CAPTURE_MODE_KEY, els.autoCaptureToggle?.checked ? 'auto' : 'manual');
+    localStorage.setItem('speechLabManualSurface', normalizeDisplaySurface(els.manualSourceSelect?.value));
+  } catch {}
+}
+
+function restoreCaptureMode() {
+  try {
+    const mode = localStorage.getItem(CAPTURE_MODE_KEY);
+    if (els.autoCaptureToggle && mode) els.autoCaptureToggle.checked = mode !== 'manual';
+    const manualSurface = localStorage.getItem('speechLabManualSurface');
+    if (els.manualSourceSelect && manualSurface) els.manualSourceSelect.value = normalizeDisplaySurface(manualSurface);
+  } catch {}
+  updateCaptureModeUi();
+}
+
+function rememberSelectedSource(stream) {
+  const track = stream?.getVideoTracks?.()[0];
+  if (!track) return;
+  const settings = track.getSettings?.() || {};
+  const surface = normalizeDisplaySurface(settings.displaySurface || 'browser');
+  const label = String(track.label || '').trim();
+  try {
+    localStorage.setItem(LAST_DISPLAY_SURFACE_KEY, surface);
+    if (label) localStorage.setItem(LAST_DISPLAY_LABEL_KEY, label);
+  } catch {}
+  updateLastSourceUi(surface, label);
+}
+
+function updateLastSourceUi(surfaceArg, labelArg) {
+  if (!els.lastSourceText) return;
+  let surface = surfaceArg;
+  let label = labelArg;
+  try {
+    surface ||= localStorage.getItem(LAST_DISPLAY_SURFACE_KEY);
+    label ||= localStorage.getItem(LAST_DISPLAY_LABEL_KEY);
+  } catch {}
+  if (!surface && !label) {
+    els.lastSourceText.textContent = 'ещё не выбран';
+    return;
+  }
+  const type = surface ? displaySurfaceName(surface) : 'источник';
+  els.lastSourceText.textContent = label ? `${type} · ${label}` : type;
+}
+
+function preferredDisplaySurface() {
+  if (!els.autoCaptureToggle?.checked) return normalizeDisplaySurface(els.manualSourceSelect?.value);
+  try {
+    return normalizeDisplaySurface(localStorage.getItem(LAST_DISPLAY_SURFACE_KEY) || 'browser');
+  } catch {
+    return 'browser';
+  }
+}
+
+function updateCaptureModeUi() {
+  const auto = els.autoCaptureToggle?.checked !== false;
+  els.captureModeBadge && (els.captureModeBadge.textContent = auto ? 'AUTO' : 'MANUAL');
+  els.manualSourceWrap?.classList.toggle('hidden', auto);
+  if (els.captureModeHint) {
+    const preferred = preferredDisplaySurface();
+    els.captureModeHint.textContent = auto
+      ? `АВТО: сначала предложу ${displaySurfaceName(preferred)}. После одного подтверждения браузера запись стартует сама.`
+      : 'РУЧНОЙ: выбери тип источника ниже. Браузер затем покажет системный список конкретных вкладок/окон.';
+  }
+  if (els.startCaptureBtnText) els.startCaptureBtnText.textContent = auto ? 'НАЙТИ И НАЧАТЬ' : 'ВЫБРАТЬ И НАЧАТЬ';
+  saveCaptureMode();
+}
 
 function showToast(message, type = 'ok') {
   els.toast.textContent = message;
@@ -870,6 +959,8 @@ function setCaptureUi(active) {
   els.stopCaptureBtn.classList.toggle('hidden', !active);
   els.liveModeBtn.disabled = active || busy;
   els.fileModeBtn.disabled = active || busy;
+  if (els.autoCaptureToggle) els.autoCaptureToggle.disabled = active;
+  if (els.manualSourceSelect) els.manualSourceSelect.disabled = active;
   els.micToggle.disabled = active;
   els.autoTranscribeToggle.disabled = active;
   els.speakerLabelsToggle.disabled = active;
@@ -904,8 +995,14 @@ async function startCapture() {
   els.progressWrap.classList.add('hidden');
 
   try {
+    const preferredSurface = preferredDisplaySurface();
+    const autoMode = els.autoCaptureToggle?.checked !== false;
+    els.captureStatusText.textContent = autoMode
+      ? `ИЩУ ИСТОЧНИК · ${displaySurfaceName(preferredSurface).toUpperCase()}`
+      : 'ВЫБЕРИ ИСТОЧНИК В БРАУЗЕРЕ';
+
     displayStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
+      video: { displaySurface: preferredSurface },
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
@@ -917,6 +1014,8 @@ async function startCapture() {
       selfBrowserSurface: 'exclude',
     });
 
+    rememberSelectedSource(displayStream);
+
     const displayAudioTracks = displayStream.getAudioTracks();
     if (!displayAudioTracks.length) {
       stopTracks(displayStream);
@@ -924,7 +1023,10 @@ async function startCapture() {
       throw new Error('Аудио не передаётся. Повтори запуск и включи «Поделиться аудио» в окне выбора.');
     }
 
-    setSourceStatus('system', 'active', 'Звук встречи: подключён');
+    const chosenVideoTrack = displayStream.getVideoTracks()[0];
+    const chosenSurface = chosenVideoTrack?.getSettings?.().displaySurface;
+    const chosenLabel = String(chosenVideoTrack?.label || '').trim();
+    setSourceStatus('system', 'active', `Звук встречи: подключён · ${chosenLabel || displaySurfaceName(chosenSurface)}`);
 
     if (els.micToggle.checked) {
       try {
@@ -1117,6 +1219,12 @@ function downloadTranscript() {
   URL.revokeObjectURL(url);
 }
 
+els.autoCaptureToggle?.addEventListener('change', updateCaptureModeUi);
+els.manualSourceSelect?.addEventListener('change', () => {
+  saveCaptureMode();
+  updateCaptureModeUi();
+});
+
 els.liveModeBtn.addEventListener('click', () => setMode('live'));
 els.fileModeBtn.addEventListener('click', () => setMode('file'));
 els.startCaptureBtn.addEventListener('click', startCapture);
@@ -1175,6 +1283,8 @@ els.transcript.addEventListener('input', () => {
   els.wordCount.textContent = String(text ? text.split(/\s+/u).filter(Boolean).length : 0);
 });
 
+restoreCaptureMode();
+updateLastSourceUi();
 restoreSpeakerNames();
 els.speakerConfig?.classList.toggle('disabled', !els.speakerLabelsToggle.checked);
 for (const input of speakerInputElements()) input.disabled = !els.speakerLabelsToggle.checked;
