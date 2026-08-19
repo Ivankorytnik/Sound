@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>Speech Lab — распознавание речи</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://huggingface.co" crossorigin />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">MVP / SPEECH TO TEXT</div>
+        <h1>РАСПОЗНАВАНИЕ<br><span>РЕЧИ ИЗ ФАЙЛА</span></h1>
+      </div>
+      <div class="badge">LOCAL AI</div>
+    </header>
+
+    <section class="grid">
+      <div class="panel input-panel">
+        <div class="panel-head">
+          <span>01</span>
+          <h2>ЗАГРУЗИ ФАЙЛ</h2>
+        </div>
+
+        <label class="dropzone" id="dropzone" for="fileInput">
+          <input
+            id="fileInput"
+            type="file"
+            accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.mp4"
+          />
+          <div class="drop-icon">＋</div>
+          <strong>ПЕРЕТАЩИ ФАЙЛ СЮДА</strong>
+          <span>или нажми, чтобы выбрать</span>
+          <small>MP3 · WAV · M4A · OGG · WEBM*</small>
+        </label>
+
+        <div class="file-card hidden" id="fileCard">
+          <div>
+            <div class="file-label">ФАЙЛ</div>
+            <div class="file-name" id="fileName">—</div>
+            <div class="file-meta" id="fileMeta">—</div>
+          </div>
+          <button class="icon-btn" id="removeFileBtn" type="button" aria-label="Удалить файл">×</button>
+        </div>
+
+        <audio id="audioPreview" class="audio-preview hidden" controls></audio>
+
+        <div class="settings">
+          <label>
+            <span>ЯЗЫК</span>
+            <select id="languageSelect">
+              <option value="auto">Определить автоматически</option>
+              <option value="russian">Русский</option>
+              <option value="english">English</option>
+            </select>
+          </label>
+
+          <label>
+            <span>МОДЕЛЬ</span>
+            <select id="modelSelect">
+              <option value="Xenova/whisper-tiny">Whisper Tiny · быстро</option>
+              <option value="Xenova/whisper-base">Whisper Base · точнее</option>
+            </select>
+          </label>
+        </div>
+
+        <button class="primary-btn" id="transcribeBtn" type="button" disabled>
+          <span id="transcribeBtnText">РАСПОЗНАТЬ РЕЧЬ</span>
+          <span class="arrow">↗</span>
+        </button>
+
+        <div class="progress-wrap hidden" id="progressWrap">
+          <div class="progress-line">
+            <span id="statusText">Подготовка…</span>
+            <span id="progressValue">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+          <div class="status-note" id="statusNote"></div>
+        </div>
+      </div>
+
+      <div class="panel output-panel">
+        <div class="panel-head">
+          <span>02</span>
+          <h2>РЕЗУЛЬТАТ</h2>
+        </div>
+
+        <div class="result-empty" id="resultEmpty">
+          <div class="signal" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <p>После обработки здесь появится текст распознанной речи.</p>
+        </div>
+
+        <div class="result hidden" id="resultBlock">
+          <div class="result-stats">
+            <div><span>СЛОВ</span><strong id="wordCount">0</strong></div>
+            <div><span>СЕГМЕНТОВ</span><strong id="segmentCount">0</strong></div>
+            <div><span>ВРЕМЯ</span><strong id="audioDuration">—</strong></div>
+          </div>
+
+          <textarea id="transcript" spellcheck="true" aria-label="Распознанный текст"></textarea>
+
+          <div class="result-actions">
+            <button class="secondary-btn" id="copyBtn" type="button">КОПИРОВАТЬ</button>
+            <button class="secondary-btn" id="downloadBtn" type="button">СКАЧАТЬ .TXT</button>
+          </div>
+
+          <details class="segments-box" id="segmentsBox">
+            <summary>ПОКАЗАТЬ ТАЙМКОДЫ</summary>
+            <div id="segmentsList" class="segments-list"></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>Работает в браузере · без API-ключа</span>
+      <span>* Поддержка формата зависит от браузера</span>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
