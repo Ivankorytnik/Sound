@@ -42,7 +42,7 @@
             <label class="switch-row">
               <span>
                 <strong>ДОБАВИТЬ МОЙ МИКРОФОН</strong>
-                <small>Собеседники + твой голос в одной записи</small>
+                <small>Ваш голос пишется отдельным каналом для пометки «ВЫ»</small>
               </span>
               <input id="micToggle" type="checkbox" checked />
               <i></i>
@@ -56,6 +56,44 @@
               <input id="autoTranscribeToggle" type="checkbox" checked />
               <i></i>
             </label>
+
+            <label class="switch-row speaker-switch">
+              <span>
+                <strong>РАЗДЕЛИТЬ ГОВОРЯЩИХ</strong>
+                <small>ВЫ — микрофон · удалённые голоса — отдельные спикеры</small>
+              </span>
+              <input id="speakerLabelsToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+          </div>
+
+          <div class="speaker-config" id="speakerConfig">
+            <div class="speaker-config-head">
+              <div>
+                <strong>ИМЕНА УЧАСТНИКОВ</strong>
+                <small>После анализа проверь, как Спикер 1/2/3 сопоставились с людьми.</small>
+              </div>
+              <span>DIARIZATION</span>
+            </div>
+            <div class="speaker-name-grid">
+              <label class="speaker-name you-name">
+                <span>МОЙ МИКРОФОН</span>
+                <input id="mySpeakerName" type="text" value="ВЫ" maxlength="32" autocomplete="off" />
+              </label>
+              <label class="speaker-name">
+                <span>СПИКЕР 1</span>
+                <input id="speakerName1" type="text" value="Иван" maxlength="32" autocomplete="off" />
+              </label>
+              <label class="speaker-name">
+                <span>СПИКЕР 2</span>
+                <input id="speakerName2" type="text" value="Мария" maxlength="32" autocomplete="off" />
+              </label>
+              <label class="speaker-name">
+                <span>СПИКЕР 3</span>
+                <input id="speakerName3" type="text" value="Пётр" maxlength="32" autocomplete="off" />
+              </label>
+            </div>
+            <p class="speaker-config-note">Модель различает голоса, но не знает реальные имена без образцов голоса. Если после расшифровки Иван и Пётр перепутаны — просто поменяй имена в полях, вся стенограмма обновится.</p>
           </div>
 
           <div class="capture-status idle" id="captureStatus">
@@ -90,6 +128,8 @@
               <li>Нажми «Начать захват».</li>
               <li>Выбери вкладку, окно или экран с разговором.</li>
               <li>В окне браузера включи «Поделиться аудио» / «Share audio».</li>
+              <li>После звонка AI разделит удалённые голоса на Спикер 1 / 2 / 3 и подставит заданные имена.</li>
+              <li>Прослушай первую реплику каждого спикера и при необходимости поменяй имена местами.</li>
             </ol>
           </div>
         </section>
@@ -164,7 +204,7 @@
           <div class="signal" aria-hidden="true">
             <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
           </div>
-          <p>Здесь появится текст из файла или запись разговора после остановки захвата.</p>
+          <p>Здесь появится стенограмма. В живом разговоре реплики будут разделены по голосам и помечены именами участников.</p>
         </div>
 
         <div class="result hidden" id="resultBlock">
@@ -182,7 +222,7 @@
           </div>
 
           <details class="segments-box" id="segmentsBox">
-            <summary>ПОКАЗАТЬ ТАЙМКОДЫ</summary>
+            <summary>ПОКАЗАТЬ РЕПЛИКИ И ТАЙМКОДЫ</summary>
             <div id="segmentsList" class="segments-list"></div>
           </details>
         </div>

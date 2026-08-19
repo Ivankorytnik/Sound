@@ -1,4 +1,4 @@
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm';
+import { pipeline, env, AutoProcessor, AutoModel, AutoModelForAudioFrameClassification } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm';
 
 env.allowLocalModels = false;
 
@@ -38,6 +38,12 @@ const els = {
   fileMode: document.querySelector('#fileMode'),
   micToggle: document.querySelector('#micToggle'),
   autoTranscribeToggle: document.querySelector('#autoTranscribeToggle'),
+  speakerLabelsToggle: document.querySelector('#speakerLabelsToggle'),
+  speakerConfig: document.querySelector('#speakerConfig'),
+  mySpeakerName: document.querySelector('#mySpeakerName'),
+  speakerName1: document.querySelector('#speakerName1'),
+  speakerName2: document.querySelector('#speakerName2'),
+  speakerName3: document.querySelector('#speakerName3'),
   startCaptureBtn: document.querySelector('#startCaptureBtn'),
   stopCaptureBtn: document.querySelector('#stopCaptureBtn'),
   captureStatus: document.querySelector('#captureStatus'),
@@ -57,12 +63,22 @@ let busy = false;
 let activeMode = 'live';
 const transcriberCache = new Map();
 
+const DIARIZATION_MODEL_ID = 'onnx-community/pyannote-segmentation-3.0';
+const SPEAKER_EMBEDDING_MODEL_ID = 'Xenova/wavlm-base-plus-sv';
+let diarizationModelsPromise = null;
+let lastSpeakerSegments = null;
+
 let displayStream = null;
 let micStream = null;
 let mixedStream = null;
 let audioContext = null;
 let mediaRecorder = null;
+let systemRecorder = null;
+let micRecorder = null;
 let recordedChunks = [];
+let systemRecordedChunks = [];
+let micRecordedChunks = [];
+let capturedSpeakerFiles = null;
 let captureStartedAt = 0;
 let captureTimerId = null;
 let captureStopping = false;
@@ -92,6 +108,41 @@ function formatTime(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function speakerInputElements() {
+  return [els.mySpeakerName, els.speakerName1, els.speakerName2, els.speakerName3].filter(Boolean);
+}
+
+function getSpeakerName(speakerKey) {
+  if (speakerKey === 'you') return (els.mySpeakerName?.value || 'ВЫ').trim() || 'ВЫ';
+  const match = /^remote-(\d+)$/.exec(String(speakerKey || ''));
+  if (match) {
+    const index = Number(match[1]);
+    const input = [els.speakerName1, els.speakerName2, els.speakerName3][index];
+    return (input?.value || `СПИКЕР ${index + 1}`).trim() || `СПИКЕР ${index + 1}`;
+  }
+  return 'СОБЕСЕДНИК';
+}
+
+function applySpeakerNames(segments = []) {
+  return segments.map((segment) => ({ ...segment, speaker: getSpeakerName(segment.speakerKey) }));
+}
+
+function saveSpeakerNames() {
+  try {
+    localStorage.setItem('speechLabSpeakerNames', JSON.stringify(speakerInputElements().map((input) => input.value)));
+  } catch {}
+}
+
+function restoreSpeakerNames() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('speechLabSpeakerNames') || 'null');
+    if (!Array.isArray(saved)) return;
+    speakerInputElements().forEach((input, index) => {
+      if (typeof saved[index] === 'string' && saved[index].trim()) input.value = saved[index].slice(0, 32);
+    });
+  } catch {}
+}
+
 function setProgress(percent, title, note = '') {
   const value = Math.max(0, Math.min(100, Math.round(percent)));
   els.progressWrap.classList.remove('hidden');
@@ -111,6 +162,9 @@ function setBusy(value) {
   els.startCaptureBtn.disabled = value || Boolean(mediaRecorder);
   els.liveModeBtn.disabled = value || Boolean(mediaRecorder);
   els.fileModeBtn.disabled = value || Boolean(mediaRecorder);
+  els.speakerLabelsToggle.disabled = value || Boolean(mediaRecorder);
+  for (const input of speakerInputElements()) input.disabled = value || Boolean(mediaRecorder) || !els.speakerLabelsToggle.checked;
+  els.speakerConfig?.classList.toggle('disabled', !els.speakerLabelsToggle.checked);
   els.transcribeBtnText.textContent = value ? 'ОБРАБАТЫВАЮ…' : 'РАСПОЗНАТЬ РЕЧЬ';
 }
 
@@ -127,6 +181,7 @@ function setMode(mode) {
 }
 
 function resetResult() {
+  lastSpeakerSegments = null;
   els.resultEmpty.classList.remove('hidden');
   els.resultBlock.classList.add('hidden');
   els.transcript.value = '';
@@ -201,7 +256,7 @@ function resampleLinear(input, sourceRate, targetRate = 16000) {
   return output;
 }
 
-async function decodeToMono16k(file) {
+async function decodeToMono16k(file, updateGlobalDuration = true) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) throw new Error('Браузер не поддерживает AudioContext.');
 
@@ -209,7 +264,7 @@ async function decodeToMono16k(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const decoded = await context.decodeAudioData(arrayBuffer.slice(0));
-    currentDuration = decoded.duration;
+    if (updateGlobalDuration) currentDuration = decoded.duration;
 
     const mono = new Float32Array(decoded.length);
     const channelCount = decoded.numberOfChannels;
@@ -274,7 +329,16 @@ function renderSegments(chunks = []) {
     text.className = 'segment-text';
     text.textContent = String(chunk.text || '').trim();
 
-    row.append(time, text);
+    if (chunk.speaker) {
+      row.classList.add('with-speaker');
+      const speaker = document.createElement('div');
+      const speakerType = chunk.speakerKey === 'you' ? 'you' : 'remote';
+      speaker.className = `segment-speaker speaker-${speakerType}`;
+      speaker.textContent = chunk.speaker;
+      row.append(time, speaker, text);
+    } else {
+      row.append(time, text);
+    }
     els.segmentsList.append(row);
   }
 }
@@ -294,6 +358,417 @@ function renderResult(output) {
   els.resultBlock.classList.remove('hidden');
 }
 
+function getTranscriptionOptions() {
+  const options = {
+    task: 'transcribe',
+    return_timestamps: true,
+    chunk_length_s: 30,
+    stride_length_s: 5,
+  };
+  if (els.languageSelect.value !== 'auto') options.language = els.languageSelect.value;
+  return options;
+}
+
+function mergeSpeakerSegments(segments) {
+  const ordered = segments
+    .filter((segment) => segment?.text)
+    .sort((a, b) => (a.timestamp?.[0] ?? 0) - (b.timestamp?.[0] ?? 0));
+
+  const merged = [];
+  for (const segment of ordered) {
+    const start = Number.isFinite(segment.timestamp?.[0]) ? segment.timestamp[0] : 0;
+    const end = Number.isFinite(segment.timestamp?.[1]) ? segment.timestamp[1] : start;
+    const previous = merged.at(-1);
+    const previousEnd = Number.isFinite(previous?.timestamp?.[1]) ? previous.timestamp[1] : previous?.timestamp?.[0] ?? 0;
+
+    if (previous && previous.speakerKey === segment.speakerKey && start - previousEnd <= 1.15) {
+      previous.text = appendToken(previous.text, segment.text);
+      previous.timestamp[1] = Math.max(previousEnd, end);
+    } else {
+      merged.push({ ...segment, timestamp: [start, end] });
+    }
+  }
+  return merged;
+}
+
+function renderSpeakerResult(rawSegments, duration) {
+  lastSpeakerSegments = rawSegments.map((segment) => ({ ...segment, timestamp: [...segment.timestamp] }));
+  const segments = applySpeakerNames(lastSpeakerSegments);
+  const transcript = segments.map((segment) => {
+    const start = Number.isFinite(segment.timestamp?.[0]) ? segment.timestamp[0] : 0;
+    return `[${formatTime(start)}] ${segment.speaker}: ${segment.text}`;
+  }).join('\n\n');
+
+  els.transcript.value = transcript;
+  const speechText = segments.map((segment) => segment.text).join(' ');
+  const words = speechText ? speechText.split(/\s+/u).filter(Boolean).length : 0;
+  els.wordCount.textContent = String(words);
+  els.segmentCount.textContent = String(segments.length);
+  els.audioDuration.textContent = formatTime(duration);
+  renderSegments(segments);
+  els.resultEmpty.classList.add('hidden');
+  els.resultBlock.classList.remove('hidden');
+}
+
+function rerenderNamedSpeakerResult() {
+  if (!lastSpeakerSegments?.length) return;
+  const duration = currentDuration;
+  const raw = lastSpeakerSegments.map((segment) => ({ ...segment, timestamp: [...segment.timestamp] }));
+  renderSpeakerResult(raw, duration);
+}
+
+function appendToken(base, token) {
+  const left = String(base || '').trim();
+  const right = String(token || '').trim();
+  if (!left) return right;
+  if (!right) return left;
+  if (/^[,.;:!?…%)\]}»]/u.test(right)) return `${left}${right}`;
+  if (/[\[(«]$/u.test(left)) return `${left}${right}`;
+  return `${left} ${right}`;
+}
+
+function wordTimestampOptions() {
+  const options = {
+    task: 'transcribe',
+    return_timestamps: 'word',
+    chunk_length_s: 30,
+    stride_length_s: 5,
+  };
+  if (els.languageSelect.value !== 'auto') options.language = els.languageSelect.value;
+  return options;
+}
+
+async function getDiarizationModels() {
+  if (diarizationModelsPromise) return diarizationModelsPromise;
+
+  const progressCallback = (data) => {
+    if (!data) return;
+    if (data.status === 'progress' && Number.isFinite(data.progress)) {
+      const mapped = 18 + Math.max(0, Math.min(100, data.progress)) * 0.10;
+      setProgress(mapped, 'Загружаю модели голосов', data.file ? `Файл: ${data.file}` : 'PyAnnote + WavLM');
+    }
+  };
+
+  diarizationModelsPromise = Promise.all([
+    AutoProcessor.from_pretrained(DIARIZATION_MODEL_ID, { progress_callback: progressCallback }),
+    AutoModelForAudioFrameClassification.from_pretrained(DIARIZATION_MODEL_ID, {
+      device: 'wasm',
+      dtype: 'fp32',
+      progress_callback: progressCallback,
+    }),
+    AutoProcessor.from_pretrained(SPEAKER_EMBEDDING_MODEL_ID, { progress_callback: progressCallback }),
+    AutoModel.from_pretrained(SPEAKER_EMBEDDING_MODEL_ID, {
+      device: 'wasm',
+      dtype: 'q8',
+      progress_callback: progressCallback,
+    }),
+  ]).catch((error) => {
+    diarizationModelsPromise = null;
+    throw error;
+  });
+
+  return diarizationModelsPromise;
+}
+
+function normalizeVector(values) {
+  const source = Array.from(values || [], Number);
+  let norm = 0;
+  for (const value of source) norm += value * value;
+  norm = Math.sqrt(norm) || 1;
+  return Float32Array.from(source, (value) => value / norm);
+}
+
+function cosineSimilarity(a, b) {
+  if (!a?.length || !b?.length || a.length !== b.length) return -1;
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  return dot;
+}
+
+function updateCentroid(cluster, embedding) {
+  if (!cluster.centroid) {
+    cluster.centroid = Float32Array.from(embedding);
+    cluster.count = 1;
+    return;
+  }
+  const nextCount = cluster.count + 1;
+  for (let i = 0; i < cluster.centroid.length; i++) {
+    cluster.centroid[i] = ((cluster.centroid[i] * cluster.count) + embedding[i]) / nextCount;
+  }
+  cluster.centroid = normalizeVector(cluster.centroid);
+  cluster.count = nextCount;
+}
+
+function assignGlobalSpeaker(embedding, clusters, maxSpeakers = 3) {
+  if (!clusters.length) {
+    clusters.push({ centroid: Float32Array.from(embedding), count: 1 });
+    return 0;
+  }
+
+  let bestIndex = 0;
+  let bestScore = -Infinity;
+  clusters.forEach((cluster, index) => {
+    const score = cosineSimilarity(embedding, cluster.centroid);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+
+  // Speaker-verification scores vary by microphone and codec. This threshold is
+  // intentionally conservative; once all configured speakers exist, choose the
+  // closest voice instead of inventing a fourth participant.
+  const sameSpeakerThreshold = 0.76;
+  if (bestScore < sameSpeakerThreshold && clusters.length < maxSpeakers) {
+    clusters.push({ centroid: Float32Array.from(embedding), count: 1 });
+    return clusters.length - 1;
+  }
+
+  updateCentroid(clusters[bestIndex], embedding);
+  return bestIndex;
+}
+
+function concatFloat32(parts, maxSamples) {
+  const total = Math.min(maxSamples, parts.reduce((sum, part) => sum + part.length, 0));
+  const output = new Float32Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    if (offset >= total) break;
+    const take = Math.min(part.length, total - offset);
+    output.set(part.subarray(0, take), offset);
+    offset += take;
+  }
+  return output;
+}
+
+function buildVoiceSample(chunkAudio, localSegments, sampleRate = 16000) {
+  const parts = localSegments
+    .map((segment) => {
+      const start = Math.max(0, Math.floor(segment.start * sampleRate));
+      const end = Math.min(chunkAudio.length, Math.ceil(segment.end * sampleRate));
+      return chunkAudio.slice(start, end);
+    })
+    .filter((part) => part.length >= Math.floor(sampleRate * 0.18))
+    .sort((a, b) => b.length - a.length);
+
+  return concatFloat32(parts, sampleRate * 3.2);
+}
+
+async function computeSpeakerEmbedding(audio, processor, model) {
+  if (!audio?.length || audio.length < 4800) return null;
+  const inputs = await processor(audio);
+  const outputs = await model(inputs);
+  const values = outputs?.embeddings?.data || outputs?.logits?.data;
+  if (!values?.length) return null;
+  return normalizeVector(values);
+}
+
+function mergeDiarizationSegments(segments) {
+  const sorted = segments
+    .filter((segment) => Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged = [];
+  for (const segment of sorted) {
+    const previous = merged.at(-1);
+    if (previous && previous.speakerKey === segment.speakerKey && segment.start - previous.end <= 0.22) {
+      previous.end = Math.max(previous.end, segment.end);
+      previous.confidence = Math.max(previous.confidence || 0, segment.confidence || 0);
+    } else {
+      merged.push({ ...segment });
+    }
+  }
+  return merged;
+}
+
+async function diarizeRemoteAudio(audio, maxSpeakers = 3) {
+  const [segmentationProcessor, segmentationModel, embeddingProcessor, embeddingModel] = await getDiarizationModels();
+  const sampleRate = 16000;
+  const chunkSamples = sampleRate * 10;
+  const totalChunks = Math.max(1, Math.ceil(audio.length / chunkSamples));
+  const globalClusters = [];
+  const globalSegments = [];
+
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const sampleStart = chunkIndex * chunkSamples;
+    const sampleEnd = Math.min(audio.length, sampleStart + chunkSamples);
+    const chunkAudio = audio.slice(sampleStart, sampleEnd);
+    const offsetSeconds = sampleStart / sampleRate;
+
+    setProgress(
+      30 + ((chunkIndex + 1) / totalChunks) * 30,
+      'Разделяю голоса',
+      `Фрагмент ${chunkIndex + 1} из ${totalChunks} · связываю одинаковые голоса между фрагментами`,
+    );
+
+    const modelAudio = chunkAudio.length === chunkSamples
+      ? chunkAudio
+      : (() => {
+          const padded = new Float32Array(chunkSamples);
+          padded.set(chunkAudio);
+          return padded;
+        })();
+    const inputs = await segmentationProcessor(modelAudio);
+    const { logits } = await segmentationModel(inputs);
+    const result = segmentationProcessor.post_process_speaker_diarization(logits, chunkAudio.length)?.[0] || [];
+    const usable = result.filter((segment) =>
+      Number.isFinite(segment.start) &&
+      Number.isFinite(segment.end) &&
+      segment.end - segment.start >= 0.16 &&
+      (segment.confidence ?? 1) >= 0.30
+    );
+
+    const byLocalSpeaker = new Map();
+    for (const segment of usable) {
+      const key = String(segment.id);
+      if (!byLocalSpeaker.has(key)) byLocalSpeaker.set(key, []);
+      byLocalSpeaker.get(key).push(segment);
+    }
+
+    for (const localSegments of byLocalSpeaker.values()) {
+      const voiceSample = buildVoiceSample(chunkAudio, localSegments, sampleRate);
+      const embedding = await computeSpeakerEmbedding(voiceSample, embeddingProcessor, embeddingModel);
+      if (!embedding) continue;
+      const globalSpeaker = assignGlobalSpeaker(embedding, globalClusters, maxSpeakers);
+
+      for (const segment of localSegments) {
+        globalSegments.push({
+          start: offsetSeconds + segment.start,
+          end: offsetSeconds + segment.end,
+          speakerKey: `remote-${globalSpeaker}`,
+          confidence: segment.confidence,
+        });
+      }
+    }
+  }
+
+  return mergeDiarizationSegments(globalSegments);
+}
+
+function findSpeakerForInterval(start, end, diarizationSegments) {
+  const safeStart = Number.isFinite(start) ? start : 0;
+  const safeEnd = Number.isFinite(end) ? end : safeStart;
+  const midpoint = (safeStart + safeEnd) / 2;
+  let best = null;
+  let bestOverlap = -1;
+
+  for (const segment of diarizationSegments) {
+    const overlap = Math.max(0, Math.min(safeEnd, segment.end) - Math.max(safeStart, segment.start));
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = segment;
+    }
+  }
+
+  if (bestOverlap > 0) return best?.speakerKey || 'remote-0';
+
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const segment of diarizationSegments) {
+    const distance = midpoint < segment.start ? segment.start - midpoint : midpoint > segment.end ? midpoint - segment.end : 0;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = segment;
+    }
+  }
+  return nearestDistance <= 1.2 ? (nearest?.speakerKey || 'remote-0') : 'remote-0';
+}
+
+function wordsToSpeakerSegments(output, diarizationSegments, fallbackSpeakerKey = 'remote-0') {
+  const words = Array.isArray(output?.chunks) ? output.chunks : [];
+  const text = String(output?.text || '').trim();
+  if (!words.length) {
+    return text ? [{ text, timestamp: [0, currentDuration || null], speakerKey: fallbackSpeakerKey }] : [];
+  }
+
+  const tagged = words
+    .map((word) => {
+      const start = Number.isFinite(word?.timestamp?.[0]) ? word.timestamp[0] : 0;
+      const end = Number.isFinite(word?.timestamp?.[1]) ? word.timestamp[1] : start;
+      return {
+        text: String(word?.text || '').trim(),
+        timestamp: [start, end],
+        speakerKey: diarizationSegments?.length
+          ? findSpeakerForInterval(start, end, diarizationSegments)
+          : fallbackSpeakerKey,
+      };
+    })
+    .filter((word) => word.text);
+
+  return mergeSpeakerSegments(tagged);
+}
+
+async function transcribeWithWordTimestamps(transcriber, audio) {
+  try {
+    return await transcriber(audio, wordTimestampOptions());
+  } catch (error) {
+    console.warn('Word timestamps unavailable, falling back to segment timestamps.', error);
+    return transcriber(audio, getTranscriptionOptions());
+  }
+}
+
+async function transcribeSpeakerFiles() {
+  if (!capturedSpeakerFiles?.system || busy || mediaRecorder) return;
+  setBusy(true);
+  resetResult();
+
+  try {
+    const systemFile = capturedSpeakerFiles.system;
+    const micFile = capturedSpeakerFiles.mic;
+    const duration = capturedSpeakerFiles.duration || currentDuration;
+
+    setProgress(3, 'Готовлю дорожки', 'Отдельно читаю звук встречи и ваш микрофон.');
+    const systemAudio = await decodeToMono16k(systemFile, false);
+    let micAudio = null;
+    if (micFile) micAudio = await decodeToMono16k(micFile, false);
+
+    setProgress(10, 'Загружаю Whisper', 'После Whisper загрузятся модели разделения голосов.');
+    const transcriber = await getTranscriber(els.modelSelect.value);
+
+    let diarizationSegments = [];
+    let diarizationWarning = '';
+    try {
+      setProgress(18, 'Загружаю модели голосов', 'PyAnnote определит смену голосов, WavLM свяжет одинаковых людей между фрагментами.');
+      diarizationSegments = await diarizeRemoteAudio(systemAudio, 3);
+      if (!diarizationSegments.length) throw new Error('Не найдено устойчивых голосовых сегментов.');
+    } catch (error) {
+      console.error('Speaker diarization failed', error);
+      diarizationWarning = error?.message || 'Разделение удалённых голосов недоступно.';
+      diarizationSegments = [];
+    }
+
+    setProgress(66, 'Распознаю встречу', diarizationSegments.length ? 'Привязываю слова Whisper к найденным голосам.' : 'Распознаю без разделения удалённых голосов.');
+    const systemOutput = await transcribeWithWordTimestamps(transcriber, systemAudio);
+    const remoteSegments = wordsToSpeakerSegments(
+      systemOutput,
+      diarizationSegments,
+      diarizationSegments.length ? 'remote-0' : 'remote-unknown',
+    );
+
+    const allSegments = [...remoteSegments];
+    if (micAudio) {
+      setProgress(86, 'Распознаю ваш микрофон', `Дорожка будет помечена как «${getSpeakerName('you')}».`);
+      const micOutput = await transcribeWithWordTimestamps(transcriber, micAudio);
+      allSegments.push(...wordsToSpeakerSegments(micOutput, [], 'you'));
+    }
+
+    const merged = mergeSpeakerSegments(allSegments);
+    const detectedRemote = new Set(diarizationSegments.map((segment) => segment.speakerKey)).size;
+    const note = diarizationWarning
+      ? `Текст готов, но голоса разделить не удалось: ${diarizationWarning}`
+      : `Определено удалённых голосов: ${detectedRemote || 1}. Проверь имена по первым репликам.`;
+    setProgress(100, 'Готово', note);
+    renderSpeakerResult(merged, duration);
+    showToast(diarizationWarning ? 'Текст готов, но проверь разделение голосов' : 'Говорящие разделены по голосам', diarizationWarning ? 'error' : 'ok');
+  } catch (error) {
+    console.error(error);
+    const message = error?.message || 'Не удалось разделить говорящих.';
+    setProgress(0, 'Ошибка', message);
+    showToast(message, 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function transcribe() {
   if (!selectedFile || busy || mediaRecorder) return;
   setBusy(true);
@@ -307,17 +782,7 @@ async function transcribe() {
     const transcriber = await getTranscriber(els.modelSelect.value);
 
     setProgress(68, 'Распознаю речь', 'Обработка выполняется локально в браузере.');
-    const options = {
-      task: 'transcribe',
-      return_timestamps: true,
-      chunk_length_s: 30,
-      stride_length_s: 5,
-    };
-
-    if (els.languageSelect.value !== 'auto') {
-      options.language = els.languageSelect.value;
-    }
-
+    const options = getTranscriptionOptions();
     const output = await transcriber(audio, options);
     setProgress(100, 'Готово', 'Текст можно отредактировать, скопировать или скачать.');
     renderResult(output);
@@ -360,6 +825,29 @@ function stopTracks(stream) {
   for (const track of stream.getTracks()) track.stop();
 }
 
+function createAudioRecorder(stream, chunks, mimeType) {
+  if (!stream?.getAudioTracks().length) return null;
+  const recorder = mimeType
+    ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 })
+    : new MediaRecorder(stream);
+  recorder.addEventListener('dataavailable', (event) => {
+    if (event.data?.size) chunks.push(event.data);
+  });
+  return recorder;
+}
+
+function stopRecorderAndWait(recorder) {
+  if (!recorder || recorder.state === 'inactive') return Promise.resolve();
+  return new Promise((resolve) => {
+    recorder.addEventListener('stop', resolve, { once: true });
+    try {
+      recorder.stop();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 async function releaseCaptureResources() {
   window.clearInterval(captureTimerId);
   captureTimerId = null;
@@ -372,6 +860,8 @@ async function releaseCaptureResources() {
   if (audioContext) await audioContext.close().catch(() => {});
   audioContext = null;
   mediaRecorder = null;
+  systemRecorder = null;
+  micRecorder = null;
   captureStartedAt = 0;
 }
 
@@ -382,6 +872,9 @@ function setCaptureUi(active) {
   els.fileModeBtn.disabled = active || busy;
   els.micToggle.disabled = active;
   els.autoTranscribeToggle.disabled = active;
+  els.speakerLabelsToggle.disabled = active;
+  for (const input of speakerInputElements()) input.disabled = active || busy || !els.speakerLabelsToggle.checked;
+  els.speakerConfig?.classList.toggle('disabled', !els.speakerLabelsToggle.checked);
   els.captureStatus.classList.toggle('recording', active);
   els.captureStatus.classList.toggle('idle', !active);
   els.captureStatusText.textContent = active ? 'ИДЁТ ЗАПИСЬ' : 'ГОТОВ К ЗАХВАТУ';
@@ -403,6 +896,9 @@ async function startCapture() {
   }
 
   recordedChunks = [];
+  systemRecordedChunks = [];
+  micRecordedChunks = [];
+  capturedSpeakerFiles = null;
   captureStopping = false;
   resetResult();
   els.progressWrap.classList.add('hidden');
@@ -472,20 +968,18 @@ async function startCapture() {
 
     mixedStream = destination.stream;
     const mimeType = getRecorderMimeType();
-    mediaRecorder = mimeType
-      ? new MediaRecorder(mixedStream, { mimeType, audioBitsPerSecond: 128000 })
-      : new MediaRecorder(mixedStream);
+    mediaRecorder = createAudioRecorder(mixedStream, recordedChunks, mimeType);
+    systemRecorder = createAudioRecorder(new MediaStream(displayAudioTracks), systemRecordedChunks, mimeType);
+    micRecorder = micStream?.getAudioTracks().length
+      ? createAudioRecorder(new MediaStream(micStream.getAudioTracks()), micRecordedChunks, mimeType)
+      : null;
 
-    mediaRecorder.addEventListener('dataavailable', (event) => {
-      if (event.data?.size) recordedChunks.push(event.data);
-    });
-
-    mediaRecorder.addEventListener('error', (event) => {
-      console.error('MediaRecorder error', event.error || event);
-      showToast('Ошибка записи звука', 'error');
-    });
-
-    mediaRecorder.addEventListener('stop', finalizeCapture, { once: true });
+    for (const recorder of [mediaRecorder, systemRecorder, micRecorder].filter(Boolean)) {
+      recorder.addEventListener('error', (event) => {
+        console.error('MediaRecorder error', event.error || event);
+        showToast('Ошибка записи звука', 'error');
+      });
+    }
 
     for (const track of displayStream.getVideoTracks()) {
       track.addEventListener('ended', () => {
@@ -497,6 +991,8 @@ async function startCapture() {
     els.recordTimer.textContent = '00:00';
     captureTimerId = window.setInterval(updateCaptureTimer, 500);
     setCaptureUi(true);
+    systemRecorder?.start(1000);
+    micRecorder?.start(1000);
     mediaRecorder.start(1000);
     showToast('Захват звука начат');
   } catch (error) {
@@ -509,24 +1005,30 @@ async function startCapture() {
   }
 }
 
-function stopCapture() {
+async function stopCapture() {
   if (!mediaRecorder || captureStopping) return;
   captureStopping = true;
   els.stopCaptureBtn.disabled = true;
   els.captureStatusText.textContent = 'ЗАВЕРШАЮ ЗАПИСЬ…';
 
-  if (mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-  } else {
-    finalizeCapture();
-  }
+  await Promise.all([
+    stopRecorderAndWait(mediaRecorder),
+    stopRecorderAndWait(systemRecorder),
+    stopRecorderAndWait(micRecorder),
+  ]);
+  await finalizeCapture();
 }
 
 async function finalizeCapture() {
   const elapsed = captureStartedAt ? (performance.now() - captureStartedAt) / 1000 : 0;
   const recorderType = mediaRecorder?.mimeType || 'audio/webm';
+  const systemType = systemRecorder?.mimeType || recorderType;
+  const micType = micRecorder?.mimeType || recorderType;
   const chunks = recordedChunks.slice();
+  const systemChunks = systemRecordedChunks.slice();
+  const micChunks = micRecordedChunks.slice();
   const shouldAutoTranscribe = els.autoTranscribeToggle.checked;
+  const shouldLabelSpeakers = els.speakerLabelsToggle.checked;
 
   await releaseCaptureResources();
   setCaptureUi(false);
@@ -539,10 +1041,19 @@ async function finalizeCapture() {
     return;
   }
 
-  const blob = new Blob(chunks, { type: recorderType });
-  const ext = recorderType.includes('mp4') ? 'm4a' : recorderType.includes('ogg') ? 'ogg' : 'webm';
+  const extForType = (type) => type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = new File([blob], `meeting_${stamp}.${ext}`, { type: recorderType });
+  const blob = new Blob(chunks, { type: recorderType });
+  const file = new File([blob], `meeting_${stamp}.${extForType(recorderType)}`, { type: recorderType });
+
+  const systemFile = systemChunks.length
+    ? new File([new Blob(systemChunks, { type: systemType })], `meeting_remote_${stamp}.${extForType(systemType)}`, { type: systemType })
+    : null;
+  const micFile = micChunks.length
+    ? new File([new Blob(micChunks, { type: micType })], `meeting_you_${stamp}.${extForType(micType)}`, { type: micType })
+    : null;
+
+  capturedSpeakerFiles = { system: systemFile, mic: micFile, mixed: file, duration: elapsed };
   currentDuration = elapsed;
   selectFile(file, 'capture');
   currentDuration = elapsed;
@@ -550,7 +1061,8 @@ async function finalizeCapture() {
   showToast('Запись разговора сохранена');
 
   if (shouldAutoTranscribe) {
-    await transcribe();
+    if (shouldLabelSpeakers && systemFile) await transcribeSpeakerFiles();
+    else await transcribe();
   }
 }
 
@@ -611,7 +1123,25 @@ els.startCaptureBtn.addEventListener('click', startCapture);
 els.stopCaptureBtn.addEventListener('click', stopCapture);
 els.fileInput.addEventListener('change', (event) => selectFile(event.target.files?.[0], 'file'));
 els.removeFileBtn.addEventListener('click', clearFile);
-els.transcribeBtn.addEventListener('click', transcribe);
+els.transcribeBtn.addEventListener('click', () => {
+  if (selectedFileSource === 'capture' && capturedSpeakerFiles?.system && els.speakerLabelsToggle.checked) {
+    transcribeSpeakerFiles();
+  } else {
+    transcribe();
+  }
+});
+els.speakerLabelsToggle.addEventListener('change', () => {
+  els.speakerConfig?.classList.toggle('disabled', !els.speakerLabelsToggle.checked);
+  for (const input of speakerInputElements()) input.disabled = busy || Boolean(mediaRecorder) || !els.speakerLabelsToggle.checked;
+});
+for (const input of speakerInputElements()) {
+  input.addEventListener('change', () => {
+    saveSpeakerNames();
+    rerenderNamedSpeakerResult();
+    if (lastSpeakerSegments?.length) showToast('Имена в стенограмме обновлены');
+  });
+}
+
 els.copyBtn.addEventListener('click', copyTranscript);
 els.downloadBtn.addEventListener('click', downloadTranscript);
 els.downloadAudioBtn.addEventListener('click', downloadAudioRecording);
@@ -645,8 +1175,15 @@ els.transcript.addEventListener('input', () => {
   els.wordCount.textContent = String(text ? text.split(/\s+/u).filter(Boolean).length : 0);
 });
 
+restoreSpeakerNames();
+els.speakerConfig?.classList.toggle('disabled', !els.speakerLabelsToggle.checked);
+for (const input of speakerInputElements()) input.disabled = !els.speakerLabelsToggle.checked;
+
 window.addEventListener('beforeunload', () => {
   stopTracks(displayStream);
   stopTracks(micStream);
   stopTracks(mixedStream);
+  for (const recorder of [mediaRecorder, systemRecorder, micRecorder]) {
+    if (recorder?.state === 'recording') { try { recorder.stop(); } catch {} }
+  }
 });
