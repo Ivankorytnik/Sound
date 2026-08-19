@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0b0d10" />
   <title>Speech Lab — распознавание речи</title>
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./favicon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+  <link rel="manifest" href="./site.webmanifest" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
   <link rel="stylesheet" href="./styles.css" />
@@ -36,6 +41,19 @@
             <div class="live-kicker"><span class="live-dot"></span> ZOOM · ТОЛК · MEET · ЛЮБАЯ ВКЛАДКА</div>
             <h3>ЗАХВАТ ЗВУКА<br>ВО ВРЕМЯ ЗВОНКА</h3>
             <p>Нажми старт, выбери вкладку или экран с разговором и обязательно включи передачу аудио.</p>
+          </div>
+
+          <div class="privacy-card">
+            <div class="privacy-icon">LOCAL</div>
+            <div>
+              <strong>ЛОКАЛЬНЫЙ РЕЖИМ</strong>
+              <p>Аудио не отправляется в Zoom, Толк или на сервер Speech Lab. В интернет скачиваются только AI-модели; сама запись обрабатывается в этой вкладке.</p>
+              <div class="privacy-points">
+                <span>● БЕЗ БОТА</span>
+                <span>● БЕЗ ЗАГРУЗКИ АУДИО</span>
+                <span>● ФАЙЛ ТОЛЬКО ПО ТВОЕЙ КНОПКЕ</span>
+              </div>
+            </div>
           </div>
 
           <div class="capture-source-mode" id="captureSourceMode">
@@ -157,14 +175,14 @@
           </div>
 
           <div class="capture-help">
-            <strong>КАК ЗАХВАТИТЬ ЗВУК</strong>
+            <strong>КАК ЗАХВАТИТЬ ЗВУК ЛОКАЛЬНО</strong>
             <ol>
               <li>Открой Zoom / Толк / встречу и вернись сюда.</li>
               <li>Выбери «Автозахват» или «Ручной».</li>
               <li>Нажми «Найти и начать» / «Выбрать и начать».</li>
               <li>Подтверди источник в системном окне браузера. Это обязательная защита браузера.</li>
               <li>В окне браузера включи «Поделиться аудио» / «Share audio».</li>
-              <li>После звонка AI разделит удалённые голоса на Спикер 1 / 2 / 3 и подставит заданные имена.</li>
+              <li>После звонка AI локально разделит удалённые голоса на Спикер 1 / 2 / 3 и подставит заданные имена.</li>
               <li>Прослушай первую реплику каждого спикера и при необходимости поменяй имена местами.</li>
             </ol>
           </div>
@@ -201,7 +219,7 @@
             <span>ЯЗЫК</span>
             <select id="languageSelect">
               <option value="auto">Определить автоматически</option>
-              <option value="russian">Русский</option>
+              <option value="russian" selected>Русский</option>
               <option value="english">English</option>
             </select>
           </label>
@@ -211,6 +229,25 @@
             <select id="modelSelect">
               <option value="Xenova/whisper-tiny">Whisper Tiny · быстро</option>
               <option value="Xenova/whisper-base">Whisper Base · точнее</option>
+              <option value="Xenova/whisper-small" selected>Whisper Small · максимум точности</option>
+            </select>
+          </label>
+
+          <label>
+            <span>КАЧЕСТВО ЗАПИСИ</span>
+            <select id="qualitySelect">
+              <option value="noisy" selected>Старая / шумная · максимум точности</option>
+              <option value="accurate">Обычная запись · точно</option>
+              <option value="fast">Быстро · без VAD</option>
+            </select>
+          </label>
+
+          <label>
+            <span>ЗАЩИТА ОТ ОШИБОК</span>
+            <select id="cleanupSelect">
+              <option value="strict" selected>Строгая · не выдумывать</option>
+              <option value="standard">Обычная · чистить повторы</option>
+              <option value="off">Выключена</option>
             </select>
           </label>
         </div>
@@ -266,8 +303,8 @@
     </section>
 
     <footer>
-      <span>Работает в браузере · без API-ключа</span>
-      <span>Захват экрана требует HTTPS · поддержка системного аудио зависит от браузера/ОС</span>
+      <span>Локальная обработка аудио · без API-ключа · без загрузки записи</span>
+      <span>Системные индикаторы браузера/ОС не скрываются и не обходятся</span>
     </footer>
   </main>
 
