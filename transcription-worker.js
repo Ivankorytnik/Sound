@@ -124,6 +124,8 @@ async function transcribeJob(message) {
     overlapSeconds = 0.7,
     useVad = true,
     vadThreshold = 0.0045,
+    noisyMode = false,
+    cleanupMode = 'standard',
   } = message;
 
   cancelledJobs.delete(jobId);
@@ -175,9 +177,14 @@ async function transcribeJob(message) {
       return_timestamps: true,
       chunk_length_s: Math.min(30, Math.max(8, Math.ceil(chunkDuration))),
       stride_length_s: 0,
-      no_repeat_ngram_size: 3,
-      repetition_penalty: 1.08,
     };
+
+    // Aggressive repetition constraints are useful for noisy archival audio,
+    // but can damage normal conversational speech. Keep them out of clean modes.
+    if (noisyMode || cleanupMode === 'strict') {
+      options.repetition_penalty = noisyMode ? 1.06 : 1.02;
+      if (noisyMode) options.no_repeat_ngram_size = 4;
+    }
 
     if (language && language !== 'auto') options.language = language;
 
