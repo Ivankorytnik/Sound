@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://cdn.sheetjs.com" crossorigin />
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
-  <link rel="stylesheet" href="./styles.css?build=v1.0.0-20260820-0731" />
+  <link rel="stylesheet" href="./styles.css?build=v1.1.0-20260820-0749" />
 </head>
 <body>
   <main class="shell">
@@ -26,8 +26,8 @@
         <div class="badge">LOCAL AI</div>
         <div class="build-badge" id="buildBadge" aria-label="Версия приложения">
           <span>ВЕРСИЯ</span>
-          <strong id="appVersion">v1.0.0</strong>
-          <small id="appBuildTime">20.08.2026 · 07:31</small>
+          <strong id="appVersion">v1.1.0</strong>
+          <small id="appBuildTime">20.08.2026 · 07:49</small>
         </div>
       </div>
     </header>
@@ -313,9 +313,10 @@
           <label>
             <span>КАЧЕСТВО ЗАПИСИ</span>
             <select id="qualitySelect">
-              <option value="accurate" selected>Авто / обычная · баланс</option>
-              <option value="noisy">Старая / шумная · точнее, медленнее</option>
-              <option value="fast">Быстро · минимум обработки</option>
+              <option value="auto" selected>Авто · длинные записи ускоряются</option>
+              <option value="fast">Турбо · чистая речь / длинные записи</option>
+              <option value="accurate">Точнее · короткие записи</option>
+              <option value="noisy">Старая / шумная · медленнее</option>
             </select>
           </label>
 
@@ -329,7 +330,7 @@
           </label>
         </div>
 
-        <div class="engine-hint" id="engineHint">AI работает в отдельном Worker.</div>
+        <div class="engine-hint" id="engineHint">AUTO FAST · длинные чистые записи автоматически идут через облегчённый пайплайн в отдельном Worker.</div>
 
         <button class="primary-btn" id="transcribeBtn" type="button" disabled>
           <span id="transcribeBtnText">РАСПОЗНАТЬ РЕЧЬ</span>
@@ -384,13 +385,13 @@
 
     <footer>
       <span>Локальная обработка аудио · без API-ключа · без загрузки записи</span>
-      <span id="footerBuild">Версия v1.0.0 · сборка 20.08.2026 07:31</span>
+      <span id="footerBuild">Версия v1.1.0 · сборка 20.08.2026 07:49</span>
       <span>Системные индикаторы браузера/ОС не скрываются и не обходятся</span>
     </footer>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script type="module" src="./app.js?build=v1.0.0-20260820-0731"></script>
+  <script type="module" src="./app.js?build=v1.1.0-20260820-0749"></script>
 </body>
 </html>
