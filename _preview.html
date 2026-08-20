@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>Speech Lab — распознавание речи</title>
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./favicon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+  <link rel="manifest" href="./site.webmanifest" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://cdn.sheetjs.com" crossorigin />
+  <link rel="preconnect" href="https://huggingface.co" crossorigin />
+  <link rel="stylesheet" href="./styles.css?build=v1.3.0-20260820-1051" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true"><img src="./favicon-192.png" alt="" /></div>
+        <div>
+          <div class="eyebrow">LOCAL AI / SPEECH TO TEXT</div>
+          <h1>SPEECH <span>LAB</span></h1>
+          <p class="topbar-subtitle">Распознавание встреч, диктофона и медиафайлов прямо в браузере</p>
+        </div>
+      </div>
+      <div class="topbar-meta">
+        <div class="badge">LOCAL AI</div>
+        <div class="build-badge" id="buildBadge" aria-label="Версия приложения">
+          <span>ВЕРСИЯ</span>
+          <strong id="appVersion">v1.3.0</strong>
+          <small id="appBuildTime">20.08.2026 · 10:51</small>
+        </div>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="panel input-panel">
+        <div class="panel-head">
+          <span>01</span>
+          <h2>ИСТОЧНИК ЗВУКА</h2>
+        </div>
+
+        <div class="mode-menu-head">
+          <div>
+            <span>РЕЖИМ РАБОТЫ</span>
+            <strong>Откуда брать звук</strong>
+          </div>
+          <small>Выбери сценарий</small>
+        </div>
+
+        <div class="mode-tabs" role="tablist" aria-label="Режим распознавания">
+          <button class="mode-tab active" id="liveModeBtn" type="button" data-mode="live" role="tab" aria-selected="true">ЖИВОЙ РАЗГОВОР</button>
+          <button class="mode-tab" id="dictaphoneModeBtn" type="button" data-mode="dictaphone" role="tab" aria-selected="false">ДИКТОФОН</button>
+          <button class="mode-tab" id="fileModeBtn" type="button" data-mode="file" role="tab" aria-selected="false">ИЗ ФАЙЛА</button>
+        </div>
+
+        <section class="mode-section" id="liveMode">
+          <div class="live-hero">
+            <div class="live-kicker"><span class="live-dot"></span> ZOOM · ТОЛК · MEET · ЛЮБАЯ ВКЛАДКА</div>
+            <h3>ЗАХВАТ ЗВУКА<br>ВО ВРЕМЯ ЗВОНКА</h3>
+            <p>Нажми старт, выбери вкладку или экран с разговором и обязательно включи передачу аудио.</p>
+          </div>
+
+          <div class="privacy-card">
+            <div class="privacy-icon">LOCAL</div>
+            <div>
+              <strong>ЛОКАЛЬНЫЙ РЕЖИМ</strong>
+              <p>Аудио не отправляется в Zoom, Толк или на сервер Speech Lab. В интернет скачиваются только AI-модели; сама запись обрабатывается в этой вкладке.</p>
+              <div class="privacy-points">
+                <span>● БЕЗ БОТА</span>
+                <span>● БЕЗ ЗАГРУЗКИ АУДИО</span>
+                <span>● ФАЙЛ ТОЛЬКО ПО ТВОЕЙ КНОПКЕ</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="capture-source-mode" id="captureSourceMode">
+            <div class="capture-source-mode-head">
+              <div>
+                <strong>РЕЖИМ ВЫБОРА ИСТОЧНИКА</strong>
+                <small>Авто запоминает тип последнего источника. Ручной позволяет выбрать тип самому.</small>
+              </div>
+              <span class="capture-mode-badge" id="captureModeBadge">AUTO</span>
+            </div>
+
+            <label class="capture-mode-switch" for="autoCaptureToggle">
+              <span id="manualModeLabel">РУЧНОЙ</span>
+              <input id="autoCaptureToggle" type="checkbox" checked />
+              <i aria-hidden="true"></i>
+              <span id="autoModeLabel">АВТОЗАХВАТ</span>
+            </label>
+
+            <div class="capture-mode-hint" id="captureModeHint">
+              АВТО: предложу подходящий тип источника и сразу начну запись после подтверждения браузера.
+            </div>
+
+            <label class="manual-source hidden" id="manualSourceWrap">
+              <span>ЧТО ПРЕДЛОЖИТЬ ПЕРВЫМ</span>
+              <select id="manualSourceSelect">
+                <option value="browser">Вкладка браузера — Zoom Web / Толк / Meet</option>
+                <option value="window">Окно приложения — Zoom Desktop</option>
+                <option value="monitor">Экран целиком</option>
+              </select>
+            </label>
+
+            <div class="last-source" id="lastSourceRow">
+              <span>ПОСЛЕДНИЙ ИСТОЧНИК</span>
+              <strong id="lastSourceText">ещё не выбран</strong>
+            </div>
+          </div>
+
+          <div class="capture-options">
+            <label class="switch-row">
+              <span>
+                <strong>ДОБАВИТЬ МОЙ МИКРОФОН</strong>
+                <small>Ваш голос пишется отдельным каналом для пометки «ВЫ»</small>
+              </span>
+              <input id="micToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+
+            <label class="switch-row">
+              <span>
+                <strong>РАСПОЗНАТЬ ПОСЛЕ СТОПА</strong>
+                <small>Автоматически запустить Whisper после звонка</small>
+              </span>
+              <input id="autoTranscribeToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+
+            <label class="switch-row speaker-switch">
+              <span>
+                <strong>РАЗДЕЛИТЬ ГОВОРЯЩИХ</strong>
+                <small>ВЫ — микрофон · удалённые голоса — отдельные спикеры</small>
+              </span>
+              <input id="speakerLabelsToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+          </div>
+
+          <div class="speaker-config" id="speakerConfig">
+            <div class="speaker-config-head">
+              <div>
+                <strong>ИМЕНА УЧАСТНИКОВ</strong>
+                <small>После анализа проверь, как Спикер 1/2/3 сопоставились с людьми.</small>
+              </div>
+              <span>DIARIZATION</span>
+            </div>
+            <div class="speaker-name-grid">
+              <label class="speaker-name you-name">
+                <span>МОЙ МИКРОФОН</span>
+                <input id="mySpeakerName" type="text" value="ВЫ" maxlength="32" autocomplete="off" />
+              </label>
+              <label class="speaker-name">
+                <span>СПИКЕР 1</span>
+                <input id="speakerName1" type="text" value="Иван" maxlength="32" autocomplete="off" />
+              </label>
+              <label class="speaker-name">
+                <span>СПИКЕР 2</span>
+                <input id="speakerName2" type="text" value="Мария" maxlength="32" autocomplete="off" />
+              </label>
+              <label class="speaker-name">
+                <span>СПИКЕР 3</span>
+                <input id="speakerName3" type="text" value="Пётр" maxlength="32" autocomplete="off" />
+              </label>
+            </div>
+            <p class="speaker-config-note">Модель различает голоса, но не знает реальные имена без образцов голоса. Если после расшифровки Иван и Пётр перепутаны — просто поменяй имена в полях, вся стенограмма обновится.</p>
+          </div>
+
+          <div class="capture-status idle" id="captureStatus">
+            <div class="capture-status-main">
+              <div>
+                <span class="capture-label">СТАТУС</span>
+                <strong id="captureStatusText">ГОТОВ К ЗАХВАТУ</strong>
+              </div>
+              <div class="record-timer" id="recordTimer">00:00</div>
+            </div>
+            <div class="source-statuses">
+              <div><span class="source-indicator" id="systemIndicator"></span><span id="systemStatus">Звук встречи: не подключён</span></div>
+              <div><span class="source-indicator" id="micIndicator"></span><span id="micStatus">Микрофон: не подключён</span></div>
+            </div>
+          </div>
+
+          <div class="capture-actions">
+            <button class="primary-btn" id="startCaptureBtn" type="button">
+              <span id="startCaptureBtnText">НАЙТИ И НАЧАТЬ</span>
+              <span class="arrow">●</span>
+            </button>
+            <button class="danger-btn hidden" id="stopCaptureBtn" type="button">
+              <span>ОСТАНОВИТЬ И СОХРАНИТЬ</span>
+              <span>■</span>
+            </button>
+          </div>
+
+          <div class="capture-help">
+            <strong>КАК ЗАХВАТИТЬ ЗВУК ЛОКАЛЬНО</strong>
+            <ol>
+              <li>Открой Zoom / Толк / встречу и вернись сюда.</li>
+              <li>Выбери «Автозахват» или «Ручной».</li>
+              <li>Нажми «Найти и начать» / «Выбрать и начать».</li>
+              <li>Подтверди источник в системном окне браузера. Это обязательная защита браузера.</li>
+              <li>В окне браузера включи «Поделиться аудио» / «Share audio».</li>
+              <li>После звонка AI локально разделит удалённые голоса на Спикер 1 / 2 / 3 и подставит заданные имена.</li>
+              <li>Прослушай первую реплику каждого спикера и при необходимости поменяй имена местами.</li>
+            </ol>
+          </div>
+        </section>
+
+
+        <section class="mode-section hidden" id="dictaphoneMode">
+          <div class="live-hero dictaphone-hero">
+            <div class="live-kicker"><span class="live-dot"></span> МИКРОФОН · ЛОКАЛЬНАЯ ЗАПИСЬ</div>
+            <h3>ДИКТОФОН<br>С РАСПОЗНАВАНИЕМ</h3>
+            <p>Записывает речь с микрофона в браузере. После остановки запись можно прослушать, скачать и сразу перевести в текст.</p>
+          </div>
+
+          <div class="privacy-card">
+            <div class="privacy-icon">MIC</div>
+            <div>
+              <strong>ЗАПИСЬ ТОЛЬКО С МИКРОФОНА</strong>
+              <p>Аудио хранится локально в памяти страницы. Оно не отправляется на сервер Speech Lab.</p>
+              <div class="privacy-points">
+                <span>● ЛОКАЛЬНО</span>
+                <span>● БЕЗ API-КЛЮЧА</span>
+                <span>● АВТОРАСПОЗНАВАНИЕ</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="capture-options">
+            <label class="switch-row">
+              <span>
+                <strong>РАСПОЗНАТЬ ПОСЛЕ СТОПА</strong>
+                <small>После завершения диктофона автоматически запустить Whisper</small>
+              </span>
+              <input id="dictaphoneAutoTranscribeToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+          </div>
+
+          <div class="capture-status idle" id="dictaphoneStatus">
+            <div class="capture-status-main">
+              <div>
+                <span class="capture-label">ДИКТОФОН</span>
+                <strong id="dictaphoneStatusText">ГОТОВ К ЗАПИСИ</strong>
+              </div>
+              <div class="record-timer" id="dictaphoneTimer">00:00</div>
+            </div>
+            <div class="source-statuses">
+              <div><span class="source-indicator" id="dictaphoneMicIndicator"></span><span id="dictaphoneMicStatus">Микрофон: не подключён</span></div>
+            </div>
+          </div>
+
+          <div class="capture-actions">
+            <button class="primary-btn" id="startDictaphoneBtn" type="button">
+              <span>НАЧАТЬ ЗАПИСЬ</span>
+              <span class="arrow">●</span>
+            </button>
+            <button class="danger-btn hidden" id="stopDictaphoneBtn" type="button">
+              <span>ОСТАНОВИТЬ</span>
+              <span>■</span>
+            </button>
+          </div>
+
+          <div class="capture-help">
+            <strong>КАК ИСПОЛЬЗОВАТЬ</strong>
+            <ol>
+              <li>Разреши браузеру доступ к микрофону.</li>
+              <li>Нажми «Начать запись» и говори.</li>
+              <li>Нажми «Остановить».</li>
+              <li>При включённом авто-режиме Whisper сразу создаст текст.</li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="mode-section hidden" id="fileMode">
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <input
+              id="fileInput"
+              type="file"
+              accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.mp4"
+            />
+            <div class="drop-icon">＋</div>
+            <strong>ПЕРЕТАЩИ ФАЙЛ СЮДА</strong>
+            <span>или нажми, чтобы выбрать</span>
+            <small>MP3 · WAV · M4A · OGG · WEBM*</small>
+          </label>
+        </section>
+
+        <div class="file-card hidden" id="fileCard">
+          <div>
+            <div class="file-label" id="fileLabel">ФАЙЛ</div>
+            <div class="file-name" id="fileName">—</div>
+            <div class="file-meta" id="fileMeta">—</div>
+          </div>
+          <button class="icon-btn" id="removeFileBtn" type="button" aria-label="Удалить файл">×</button>
+        </div>
+
+        <audio id="audioPreview" class="audio-preview hidden" controls></audio>
+        <button class="secondary-btn recording-download hidden" id="downloadAudioBtn" type="button">СКАЧАТЬ АУДИОЗАПИСЬ</button>
+
+        <div class="settings-head">
+          <div>
+            <span>НАСТРОЙКИ AI</span>
+            <strong>Качество распознавания</strong>
+          </div>
+          <small>Оптимально: Auto + Base</small>
+        </div>
+
+        <div class="settings">
+          <label>
+            <span>ЯЗЫК</span>
+            <select id="languageSelect">
+              <option value="auto">Определить автоматически</option>
+              <option value="russian" selected>Русский</option>
+              <option value="english">English</option>
+            </select>
+          </label>
+
+          <label>
+            <span>МОДЕЛЬ</span>
+            <select id="modelSelect">
+              <option value="auto" selected>Авто · модель по режиму качества</option>
+              <option value="onnx-community/whisper-tiny">Whisper Tiny · только скорость</option>
+              <option value="onnx-community/whisper-base">Whisper Base · рекомендуется</option>
+              <option value="onnx-community/whisper-small">Whisper Small · вручную / очень тяжёлый</option>
+            </select>
+          </label>
+
+          <label>
+            <span>КАЧЕСТВО ЗАПИСИ</span>
+            <select id="qualitySelect">
+              <option value="auto" selected>Авто · БАЛАНС / Base · рекомендуется</option>
+              <option value="fast">БЫСТРО · Tiny · максимум скорости</option>
+              <option value="balanced">БАЛАНС · Base · чистая речь</option>
+              <option value="accurate">ТОЧНО · Base + точные таймкоды</option>
+              <option value="noisy">ШУМ · старая / плохая запись</option>
+            </select>
+          </label>
+
+          <label>
+            <span>ЗАЩИТА ОТ ОШИБОК</span>
+            <select id="cleanupSelect">
+              <option value="strict" selected>Строгая · не выдумывать</option>
+              <option value="standard">Обычная · чистить повторы</option>
+              <option value="off">Выключена</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="engine-hint" id="engineHint">БАЛАНС · обычная русская речь распознаётся через Whisper Base в отдельном Worker. Tiny используется только в режиме БЫСТРО.</div>
+
+        <button class="primary-btn" id="transcribeBtn" type="button" disabled>
+          <span id="transcribeBtnText">РАСПОЗНАТЬ РЕЧЬ</span>
+          <span class="arrow">↗</span>
+        </button>
+
+        <div class="progress-wrap hidden" id="progressWrap">
+          <div class="progress-line">
+            <span id="statusText">Подготовка…</span>
+            <span id="progressValue">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+          <div class="status-note" id="statusNote"></div>
+        </div>
+      </div>
+
+      <div class="panel output-panel">
+        <div class="panel-head">
+          <span>02</span>
+          <h2>РЕЗУЛЬТАТ</h2>
+        </div>
+
+        <div class="result-empty" id="resultEmpty">
+          <div class="signal" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <p>Здесь появится стенограмма. В живом разговоре реплики будут разделены по голосам и помечены именами участников.</p>
+        </div>
+
+        <div class="result hidden" id="resultBlock">
+          <div class="result-stats">
+            <div><span>СЛОВ</span><strong id="wordCount">0</strong></div>
+            <div><span>СЕГМЕНТОВ</span><strong id="segmentCount">0</strong></div>
+            <div><span>ВРЕМЯ</span><strong id="audioDuration">—</strong></div>
+          </div>
+
+          <textarea id="transcript" spellcheck="true" aria-label="Распознанный текст"></textarea>
+
+          <div class="result-actions">
+            <button class="secondary-btn result-copy-btn" id="copyBtn" type="button">СКОПИРОВАТЬ ТЕКСТ</button>
+            <button class="secondary-btn" id="downloadExcelBtn" type="button">ВЫГРУЗИТЬ В EXCEL</button>
+            <button class="secondary-btn" id="downloadBtn" type="button">СКАЧАТЬ .TXT</button>
+          </div>
+
+          <details class="segments-box" id="segmentsBox">
+            <summary>ПОКАЗАТЬ РЕПЛИКИ И ТАЙМКОДЫ</summary>
+            <div id="segmentsList" class="segments-list"></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>Локальная обработка аудио · без API-ключа · без загрузки записи</span>
+      <span id="footerBuild">Версия v1.3.0 · сборка 20.08.2026 10:51</span>
+      <span>Системные индикаторы браузера/ОС не скрываются и не обходятся</span>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  
+</body>
+</html>

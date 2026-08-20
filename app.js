@@ -1,984 +1,670 @@
-const BUILD = {
-  version: 'v1.3.1',
-  date: '20.08.2026',
-  time: '12:06',
-  stamp: 'v1.3.1-20260820-1206',
-};
+(() => {
+  'use strict';
 
-const $ = (selector) => document.querySelector(selector);
-
-const els = {
-  buildBadge: $('#buildBadge'),
-  appVersion: $('#appVersion'),
-  appBuildTime: $('#appBuildTime'),
-  footerBuild: $('#footerBuild'),
-
-  liveModeBtn: $('#liveModeBtn'),
-  dictaphoneModeBtn: $('#dictaphoneModeBtn'),
-  fileModeBtn: $('#fileModeBtn'),
-  liveMode: $('#liveMode'),
-  dictaphoneMode: $('#dictaphoneMode'),
-  fileMode: $('#fileMode'),
-
-  captureSourceMode: $('#captureSourceMode'),
-  captureModeBadge: $('#captureModeBadge'),
-  manualModeLabel: $('#manualModeLabel'),
-  autoCaptureToggle: $('#autoCaptureToggle'),
-  autoModeLabel: $('#autoModeLabel'),
-  captureModeHint: $('#captureModeHint'),
-  manualSourceWrap: $('#manualSourceWrap'),
-  manualSourceSelect: $('#manualSourceSelect'),
-  lastSourceRow: $('#lastSourceRow'),
-  lastSourceText: $('#lastSourceText'),
-  micToggle: $('#micToggle'),
-  autoTranscribeToggle: $('#autoTranscribeToggle'),
-  speakerLabelsToggle: $('#speakerLabelsToggle'),
-  speakerConfig: $('#speakerConfig'),
-  mySpeakerName: $('#mySpeakerName'),
-  speakerName1: $('#speakerName1'),
-  speakerName2: $('#speakerName2'),
-  speakerName3: $('#speakerName3'),
-  captureStatus: $('#captureStatus'),
-  captureStatusText: $('#captureStatusText'),
-  recordTimer: $('#recordTimer'),
-  systemIndicator: $('#systemIndicator'),
-  systemStatus: $('#systemStatus'),
-  micIndicator: $('#micIndicator'),
-  micStatus: $('#micStatus'),
-  startCaptureBtn: $('#startCaptureBtn'),
-  startCaptureBtnText: $('#startCaptureBtnText'),
-  stopCaptureBtn: $('#stopCaptureBtn'),
-
-  dictaphoneAutoTranscribeToggle: $('#dictaphoneAutoTranscribeToggle'),
-  dictaphoneStatus: $('#dictaphoneStatus'),
-  dictaphoneStatusText: $('#dictaphoneStatusText'),
-  dictaphoneTimer: $('#dictaphoneTimer'),
-  dictaphoneMicIndicator: $('#dictaphoneMicIndicator'),
-  dictaphoneMicStatus: $('#dictaphoneMicStatus'),
-  startDictaphoneBtn: $('#startDictaphoneBtn'),
-  stopDictaphoneBtn: $('#stopDictaphoneBtn'),
-
-  dropzone: $('#dropzone'),
-  fileInput: $('#fileInput'),
-  fileCard: $('#fileCard'),
-  fileLabel: $('#fileLabel'),
-  fileName: $('#fileName'),
-  fileMeta: $('#fileMeta'),
-  removeFileBtn: $('#removeFileBtn'),
-  audioPreview: $('#audioPreview'),
-  downloadAudioBtn: $('#downloadAudioBtn'),
-
-  languageSelect: $('#languageSelect'),
-  modelSelect: $('#modelSelect'),
-  qualitySelect: $('#qualitySelect'),
-  cleanupSelect: $('#cleanupSelect'),
-  engineHint: $('#engineHint'),
-  transcribeBtn: $('#transcribeBtn'),
-  transcribeBtnText: $('#transcribeBtnText'),
-  progressWrap: $('#progressWrap'),
-  statusText: $('#statusText'),
-  progressValue: $('#progressValue'),
-  progressBar: $('#progressBar'),
-  statusNote: $('#statusNote'),
-
-  resultEmpty: $('#resultEmpty'),
-  resultBlock: $('#resultBlock'),
-  wordCount: $('#wordCount'),
-  segmentCount: $('#segmentCount'),
-  audioDuration: $('#audioDuration'),
-  transcript: $('#transcript'),
-  copyBtn: $('#copyBtn'),
-  downloadExcelBtn: $('#downloadExcelBtn'),
-  downloadBtn: $('#downloadBtn'),
-  segmentsBox: $('#segmentsBox'),
-  segmentsList: $('#segmentsList'),
-  toast: $('#toast'),
-};
-
-let activeMode = 'live';
-let selectedFile = null;
-let selectedFileLabel = 'ФАЙЛ';
-let previewUrl = null;
-let downloadableAudioBlob = null;
-let currentDuration = 0;
-let currentOutput = { text: '', chunks: [] };
-let busy = false;
-let worker = null;
-let activeJobId = null;
-let jobStartedAt = 0;
-let partialTranscript = '';
-
-let liveDisplayStream = null;
-let liveMicStream = null;
-let liveAudioContext = null;
-let liveRecorder = null;
-let liveChunks = [];
-let liveTimerId = null;
-let liveStartedAt = 0;
-let stoppingLive = false;
-
-let dictaphoneStream = null;
-let dictaphoneRecorder = null;
-let dictaphoneChunks = [];
-let dictaphoneTimerId = null;
-let dictaphoneStartedAt = 0;
-
-
-function safeStorageGet(key) {
-  try { return window.localStorage?.getItem(key) || null; } catch { return null; }
-}
-
-function safeStorageSet(key, value) {
-  try { window.localStorage?.setItem(key, value); } catch { /* storage can be blocked */ }
-}
-
-function showToast(message, type = 'ok') {
-  if (!els.toast) return;
-  els.toast.textContent = message;
-  els.toast.classList.toggle('error', type === 'error');
-  els.toast.classList.add('show');
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => els.toast.classList.remove('show'), 2600);
-}
-
-function setBuildInfo() {
-  if (els.appVersion) els.appVersion.textContent = BUILD.version;
-  if (els.appBuildTime) els.appBuildTime.textContent = `${BUILD.date} · ${BUILD.time}`;
-  if (els.footerBuild) els.footerBuild.textContent = `Версия ${BUILD.version} · сборка ${BUILD.date} ${BUILD.time}`;
-}
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 Б';
-  const units = ['Б', 'КБ', 'МБ', 'ГБ'];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
-}
-
-function formatTime(seconds) {
-  if (!Number.isFinite(seconds)) return '—';
-  const total = Math.max(0, Math.round(seconds));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function safeFileBase(name = 'speech-lab') {
-  return String(name)
-    .replace(/\.[^.]+$/, '')
-    .replace(/[^a-zA-Zа-яА-ЯёЁ0-9_-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 80) || 'speech-lab';
-}
-
-function setIndicator(indicator, on) {
-  if (!indicator) return;
-  indicator.classList.toggle('active', Boolean(on));
-  indicator.classList.toggle('on', Boolean(on));
-}
-
-function setCaptureStatus(text, state = 'idle') {
-  if (els.captureStatusText) els.captureStatusText.textContent = text;
-  if (els.captureStatus) {
-    els.captureStatus.classList.remove('idle', 'recording', 'error', 'active');
-    els.captureStatus.classList.add(state);
-  }
-}
-
-function setDictaphoneStatus(text, state = 'idle') {
-  if (els.dictaphoneStatusText) els.dictaphoneStatusText.textContent = text;
-  if (els.dictaphoneStatus) {
-    els.dictaphoneStatus.classList.remove('idle', 'recording', 'error', 'active');
-    els.dictaphoneStatus.classList.add(state);
-  }
-}
-
-function setProgress(percent, title, note = '') {
-  const value = Math.max(0, Math.min(100, Math.round(percent)));
-  els.progressWrap?.classList.remove('hidden');
-  if (els.progressBar) els.progressBar.style.width = `${value}%`;
-  if (els.progressValue) els.progressValue.textContent = `${value}%`;
-  if (els.statusText) els.statusText.textContent = title;
-  if (els.statusNote) els.statusNote.textContent = note;
-}
-
-function setBusy(value) {
-  busy = value;
-  if (els.transcribeBtn) els.transcribeBtn.disabled = !value && !selectedFile;
-  if (els.fileInput) els.fileInput.disabled = value;
-  if (els.languageSelect) els.languageSelect.disabled = value;
-  if (els.modelSelect) els.modelSelect.disabled = value;
-  if (els.qualitySelect) els.qualitySelect.disabled = value;
-  if (els.cleanupSelect) els.cleanupSelect.disabled = value;
-  if (els.removeFileBtn) els.removeFileBtn.disabled = value;
-  if (els.transcribeBtnText) els.transcribeBtnText.textContent = value ? 'ОСТАНОВИТЬ' : 'РАСПОЗНАТЬ РЕЧЬ';
-}
-
-function switchMode(mode) {
-  const map = {
-    live: [els.liveModeBtn, els.liveMode],
-    dictaphone: [els.dictaphoneModeBtn, els.dictaphoneMode],
-    file: [els.fileModeBtn, els.fileMode],
+  const BUILD = {
+    version: 'v1.3.2',
+    date: '20.08.2026',
+    time: '17:18',
+    key: 'v1.3.2-20260820-1718',
   };
-  if (!map[mode]) return;
-  activeMode = mode;
 
-  for (const [name, [button, section]] of Object.entries(map)) {
-    const active = name === mode;
-    button?.classList.toggle('active', active);
-    button?.setAttribute('aria-selected', String(active));
-    section?.classList.toggle('hidden', !active);
+  const $ = (selector) => document.querySelector(selector);
+  const els = {
+    buildBadge: $('#buildBadge'), appVersion: $('#appVersion'), appBuildTime: $('#appBuildTime'), footerBuild: $('#footerBuild'),
+    liveModeBtn: $('#liveModeBtn'), dictaphoneModeBtn: $('#dictaphoneModeBtn'), fileModeBtn: $('#fileModeBtn'),
+    liveMode: $('#liveMode'), dictaphoneMode: $('#dictaphoneMode'), fileMode: $('#fileMode'),
+    captureSourceMode: $('#captureSourceMode'), captureModeBadge: $('#captureModeBadge'), manualModeLabel: $('#manualModeLabel'),
+    autoCaptureToggle: $('#autoCaptureToggle'), autoModeLabel: $('#autoModeLabel'), captureModeHint: $('#captureModeHint'),
+    manualSourceWrap: $('#manualSourceWrap'), manualSourceSelect: $('#manualSourceSelect'), lastSourceRow: $('#lastSourceRow'), lastSourceText: $('#lastSourceText'),
+    micToggle: $('#micToggle'), autoTranscribeToggle: $('#autoTranscribeToggle'), speakerLabelsToggle: $('#speakerLabelsToggle'), speakerConfig: $('#speakerConfig'),
+    mySpeakerName: $('#mySpeakerName'), speakerName1: $('#speakerName1'), speakerName2: $('#speakerName2'), speakerName3: $('#speakerName3'),
+    captureStatus: $('#captureStatus'), captureStatusText: $('#captureStatusText'), recordTimer: $('#recordTimer'),
+    systemIndicator: $('#systemIndicator'), systemStatus: $('#systemStatus'), micIndicator: $('#micIndicator'), micStatus: $('#micStatus'),
+    captureDiagnostic: $('#captureDiagnostic'), captureDiagnosticTitle: $('#captureDiagnosticTitle'), captureDiagnosticText: $('#captureDiagnosticText'),
+    retryTabCaptureBtn: $('#retryTabCaptureBtn'), testMicBtn: $('#testMicBtn'),
+    startCaptureBtn: $('#startCaptureBtn'), startCaptureBtnText: $('#startCaptureBtnText'), stopCaptureBtn: $('#stopCaptureBtn'),
+    dictaphoneAutoTranscribeToggle: $('#dictaphoneAutoTranscribeToggle'), dictaphoneStatus: $('#dictaphoneStatus'),
+    dictaphoneStatusText: $('#dictaphoneStatusText'), dictaphoneTimer: $('#dictaphoneTimer'), dictaphoneMicIndicator: $('#dictaphoneMicIndicator'),
+    dictaphoneMicStatus: $('#dictaphoneMicStatus'), startDictaphoneBtn: $('#startDictaphoneBtn'), stopDictaphoneBtn: $('#stopDictaphoneBtn'),
+    fileInput: $('#fileInput'), dropzone: $('#dropzone'), fileCard: $('#fileCard'), fileLabel: $('#fileLabel'), fileName: $('#fileName'), fileMeta: $('#fileMeta'),
+    removeFileBtn: $('#removeFileBtn'), audioPreview: $('#audioPreview'), downloadAudioBtn: $('#downloadAudioBtn'),
+    languageSelect: $('#languageSelect'), modelSelect: $('#modelSelect'), qualitySelect: $('#qualitySelect'), cleanupSelect: $('#cleanupSelect'), engineHint: $('#engineHint'),
+    transcribeBtn: $('#transcribeBtn'), transcribeBtnText: $('#transcribeBtnText'), progressWrap: $('#progressWrap'), progressBar: $('#progressBar'),
+    progressValue: $('#progressValue'), statusText: $('#statusText'), statusNote: $('#statusNote'), resultEmpty: $('#resultEmpty'), resultBlock: $('#resultBlock'),
+    transcript: $('#transcript'), wordCount: $('#wordCount'), segmentCount: $('#segmentCount'), audioDuration: $('#audioDuration'), segmentsList: $('#segmentsList'),
+    segmentsBox: $('#segmentsBox'), copyBtn: $('#copyBtn'), downloadExcelBtn: $('#downloadExcelBtn'), downloadBtn: $('#downloadBtn'), toast: $('#toast'),
+  };
+
+  const state = {
+    mode: 'live', selectedFile: null, previewUrl: null, recordedBlob: null, currentDuration: 0,
+    transcriptionWorker: null, transcriptionJobId: null, transcriptionBusy: false, transcriptionStartedAt: 0,
+    displayStream: null, micStream: null, mixContext: null, mixDestination: null, captureRecorder: null, captureChunks: [],
+    captureStartedAt: 0, captureTimerId: null, captureStopping: false,
+    dictaphoneStream: null, dictaphoneRecorder: null, dictaphoneChunks: [], dictaphoneStartedAt: 0, dictaphoneTimerId: null,
+    lastSegments: [],
+  };
+
+  function safeStorageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+  function safeStorageSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
+
+  function showToast(message, type = 'ok', timeout = 2600) {
+    if (!els.toast) return;
+    els.toast.textContent = message;
+    els.toast.classList.toggle('error', type === 'error');
+    els.toast.classList.add('show');
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => els.toast.classList.remove('show'), timeout);
   }
 
-  if (mode === 'file') {
-    requestAnimationFrame(() => els.dropzone?.focus?.());
-  }
-}
-
-function resetResult() {
-  currentOutput = { text: '', chunks: [] };
-  partialTranscript = '';
-  els.resultEmpty?.classList.remove('hidden');
-  els.resultBlock?.classList.add('hidden');
-  if (els.transcript) els.transcript.value = '';
-  if (els.wordCount) els.wordCount.textContent = '0';
-  if (els.segmentCount) els.segmentCount.textContent = '0';
-  if (els.audioDuration) els.audioDuration.textContent = '—';
-  if (els.segmentsList) els.segmentsList.innerHTML = '';
-  if (els.segmentsBox) els.segmentsBox.open = false;
-}
-
-function renderSegments(chunks = []) {
-  if (!els.segmentsList || !els.segmentsBox) return;
-  els.segmentsList.innerHTML = '';
-  els.segmentsBox.classList.toggle('hidden', !chunks.length);
-
-  for (const chunk of chunks) {
-    const row = document.createElement('div');
-    row.className = 'segment';
-
-    const time = document.createElement('div');
-    time.className = 'segment-time';
-    const start = Array.isArray(chunk.timestamp) ? chunk.timestamp[0] : null;
-    const end = Array.isArray(chunk.timestamp) ? chunk.timestamp[1] : null;
-    time.textContent = `${formatTime(start)}${Number.isFinite(end) ? `–${formatTime(end)}` : ''}`;
-
-    const text = document.createElement('div');
-    text.className = 'segment-text';
-    const speaker = chunk.speaker ? `${chunk.speaker}: ` : '';
-    text.textContent = `${speaker}${String(chunk.text || '').trim()}`;
-
-    row.append(time, text);
-    els.segmentsList.append(row);
-  }
-}
-
-function renderResult(output, sourceDuration = currentDuration) {
-  currentOutput = output || { text: '', chunks: [] };
-  const text = String(currentOutput.text || '').trim();
-  const chunks = Array.isArray(currentOutput.chunks) ? currentOutput.chunks : [];
-  if (els.transcript) els.transcript.value = text;
-  const words = text ? text.split(/\s+/u).filter(Boolean).length : 0;
-  if (els.wordCount) els.wordCount.textContent = String(words);
-  if (els.segmentCount) els.segmentCount.textContent = String(chunks.length);
-  if (els.audioDuration) els.audioDuration.textContent = formatTime(sourceDuration);
-  renderSegments(chunks);
-  els.resultEmpty?.classList.add('hidden');
-  els.resultBlock?.classList.remove('hidden');
-}
-
-function renderPartialText(text) {
-  partialTranscript = `${partialTranscript} ${String(text || '').trim()}`.replace(/\s+/g, ' ').trim();
-  if (!partialTranscript) return;
-  els.resultEmpty?.classList.add('hidden');
-  els.resultBlock?.classList.remove('hidden');
-  if (els.transcript) els.transcript.value = partialTranscript;
-  if (els.wordCount) els.wordCount.textContent = String(partialTranscript.split(/\s+/u).filter(Boolean).length);
-  if (els.audioDuration) els.audioDuration.textContent = formatTime(currentDuration);
-}
-
-function looksLikeMedia(file) {
-  if (!file) return false;
-  const extOk = /\.(mp3|wav|m4a|aac|ogg|webm|mp4|mpeg|mpga)$/i.test(file.name || '');
-  return String(file.type || '').startsWith('audio/') || String(file.type || '').startsWith('video/') || extOk;
-}
-
-function revokePreview() {
-  if (previewUrl) URL.revokeObjectURL(previewUrl);
-  previewUrl = null;
-}
-
-function selectFile(file, { label = 'ФАЙЛ', downloadableBlob = null, preserveResult = false } = {}) {
-  if (!file) return;
-  if (!looksLikeMedia(file)) {
-    showToast('Нужен аудио- или видеофайл', 'error');
-    return;
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 Б';
+    const units = ['Б', 'КБ', 'МБ', 'ГБ'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return `${(bytes / (1024 ** i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
   }
 
-  selectedFile = file;
-  selectedFileLabel = label;
-  downloadableAudioBlob = downloadableBlob;
-  currentDuration = 0;
-  if (!preserveResult) resetResult();
-
-  if (els.fileLabel) els.fileLabel.textContent = label;
-  if (els.fileName) els.fileName.textContent = file.name;
-  if (els.fileMeta) els.fileMeta.textContent = `${formatBytes(file.size)} · ${file.type || 'медиафайл'}`;
-  els.fileCard?.classList.remove('hidden');
-  if (els.transcribeBtn) els.transcribeBtn.disabled = false;
-
-  revokePreview();
-  previewUrl = URL.createObjectURL(file);
-  if (els.audioPreview) {
-    els.audioPreview.src = previewUrl;
-    els.audioPreview.classList.remove('hidden');
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds)) return '—';
+    const total = Math.max(0, Math.round(seconds));
+    const h = Math.floor(total / 3600); const m = Math.floor((total % 3600) / 60); const s = total % 60;
+    return h ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   }
-  els.downloadAudioBtn?.classList.toggle('hidden', !downloadableBlob);
-}
 
-function clearFile() {
-  if (busy) return;
-  selectedFile = null;
-  selectedFileLabel = 'ФАЙЛ';
-  downloadableAudioBlob = null;
-  currentDuration = 0;
-  if (els.fileInput) els.fileInput.value = '';
-  els.fileCard?.classList.add('hidden');
-  els.audioPreview?.classList.add('hidden');
-  els.audioPreview?.removeAttribute('src');
-  els.downloadAudioBtn?.classList.add('hidden');
-  revokePreview();
-  if (els.transcribeBtn) els.transcribeBtn.disabled = true;
-  els.progressWrap?.classList.add('hidden');
-  resetResult();
-}
+  function timestampForFile() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+  }
 
-function updateCaptureModeUI() {
-  const auto = Boolean(els.autoCaptureToggle?.checked);
-  if (els.captureModeBadge) els.captureModeBadge.textContent = auto ? 'AUTO' : 'MANUAL';
-  els.manualSourceWrap?.classList.toggle('hidden', auto);
-  if (els.startCaptureBtnText) els.startCaptureBtnText.textContent = auto ? 'НАЙТИ И НАЧАТЬ' : 'ВЫБРАТЬ И НАЧАТЬ';
-  if (els.captureModeHint) {
+  function setMode(mode) {
+    state.mode = mode;
+    const map = { live: [els.liveModeBtn, els.liveMode], dictaphone: [els.dictaphoneModeBtn, els.dictaphoneMode], file: [els.fileModeBtn, els.fileMode] };
+    for (const [key, [btn, section]] of Object.entries(map)) {
+      const active = key === mode;
+      btn?.classList.toggle('active', active); btn?.setAttribute('aria-selected', active ? 'true' : 'false');
+      section?.classList.toggle('hidden', !active);
+    }
+  }
+
+  function setIndicator(indicator, textEl, connected, text) {
+    indicator?.classList.toggle('connected', !!connected);
+    indicator?.classList.toggle('error', connected === false && /ошиб|нет|запрещ|без звука|не передан/i.test(text || ''));
+    if (textEl) textEl.textContent = text;
+  }
+
+  function setCaptureStatus(kind, text) {
+    if (els.captureStatus) els.captureStatus.className = `capture-status ${kind}`;
+    if (els.captureStatusText) els.captureStatusText.textContent = text;
+  }
+
+  function showCaptureDiagnostic(title, text, options = {}) {
+    if (!els.captureDiagnostic) return;
+    els.captureDiagnostic.classList.remove('hidden');
+    els.captureDiagnostic.classList.toggle('warning', options.warning !== false);
+    els.captureDiagnosticTitle.textContent = title;
+    els.captureDiagnosticText.textContent = text;
+    els.retryTabCaptureBtn?.classList.toggle('hidden', options.retryTab === false);
+    els.testMicBtn?.classList.toggle('hidden', options.testMic === false);
+  }
+
+  function hideCaptureDiagnostic() { els.captureDiagnostic?.classList.add('hidden'); }
+
+  function preferredSurface() {
+    if (!els.autoCaptureToggle?.checked) return els.manualSourceSelect?.value || 'browser';
+    return safeStorageGet('speechlab.lastSurface') || 'browser';
+  }
+
+  function updateCaptureModeUI() {
+    const auto = !!els.autoCaptureToggle?.checked;
+    els.captureModeBadge.textContent = auto ? 'AUTO' : 'MANUAL';
+    els.manualSourceWrap?.classList.toggle('hidden', auto);
     els.captureModeHint.textContent = auto
-      ? 'АВТО: предложу последний удачный тип источника и сразу начну запись после подтверждения браузера.'
-      : 'РУЧНОЙ: выбери, что предложить первым — вкладку, окно приложения или экран.';
-  }
-}
-
-function sourceLabel(surface) {
-  if (surface === 'browser') return 'вкладка браузера';
-  if (surface === 'window') return 'окно приложения';
-  if (surface === 'monitor') return 'экран целиком';
-  return 'источник экрана';
-}
-
-function preferredSurface() {
-  if (!els.autoCaptureToggle?.checked) return els.manualSourceSelect?.value || 'browser';
-  return safeStorageGet('speechLabLastDisplaySurface') || 'browser';
-}
-
-function supportedMimeType() {
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/mp4',
-  ];
-  return candidates.find((type) => window.MediaRecorder?.isTypeSupported?.(type)) || '';
-}
-
-function recorderExtension(mimeType = '') {
-  if (mimeType.includes('ogg')) return 'ogg';
-  if (mimeType.includes('mp4')) return 'm4a';
-  return 'webm';
-}
-
-function makeRecorder(stream) {
-  if (!window.MediaRecorder) throw new Error('Этот браузер не поддерживает MediaRecorder. Используй актуальный Chrome или Edge.');
-  const mimeType = supportedMimeType();
-  return mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-}
-
-function startTimer(kind) {
-  const live = kind === 'live';
-  const started = Date.now();
-  if (live) liveStartedAt = started;
-  else dictaphoneStartedAt = started;
-
-  const render = () => {
-    const elapsed = (Date.now() - started) / 1000;
-    if (live && els.recordTimer) els.recordTimer.textContent = formatTime(elapsed);
-    if (!live && els.dictaphoneTimer) els.dictaphoneTimer.textContent = formatTime(elapsed);
-  };
-  render();
-  const id = setInterval(render, 500);
-  if (live) liveTimerId = id;
-  else dictaphoneTimerId = id;
-}
-
-function stopTimer(kind) {
-  if (kind === 'live') {
-    clearInterval(liveTimerId);
-    liveTimerId = null;
-  } else {
-    clearInterval(dictaphoneTimerId);
-    dictaphoneTimerId = null;
-  }
-}
-
-async function startDictaphone() {
-  if (dictaphoneRecorder?.state === 'recording') return;
-  if (!navigator.mediaDevices?.getUserMedia) {
-    showToast('Микрофон недоступен в этом браузере', 'error');
-    return;
+      ? 'АВТО: открою системный выбор с последним удачным типом источника. После подтверждения запись стартует сама.'
+      : 'РУЧНОЙ: выбери, какую вкладку системного окна браузера показать первой.';
+    els.startCaptureBtnText.textContent = auto ? 'НАЙТИ И НАЧАТЬ' : 'ВЫБРАТЬ И НАЧАТЬ';
   }
 
-  try {
-    setDictaphoneStatus('ЗАПРАШИВАЮ МИКРОФОН…', 'active');
-    dictaphoneStream = await navigator.mediaDevices.getUserMedia({
+  function displaySurfaceLabel(value) {
+    return ({ browser: 'Вкладка браузера', window: 'Окно приложения', monitor: 'Экран целиком' })[value] || 'Выбранный источник';
+  }
+
+  function mediaErrorMessage(error, what) {
+    const name = error?.name || '';
+    if (name === 'NotAllowedError') return `${what}: доступ не разрешён. Проверь разрешения сайта в адресной строке браузера.`;
+    if (name === 'NotFoundError') return `${what}: подходящее устройство не найдено.`;
+    if (name === 'NotReadableError') return `${what}: устройство занято другим приложением или недоступно системе.`;
+    if (name === 'AbortError') return `${what}: браузер прервал подключение.`;
+    if (name === 'InvalidStateError') return `${what}: запуск должен быть выполнен кликом по кнопке на активной вкладке.`;
+    return `${what}: ${error?.message || 'не удалось подключить источник.'}`;
+  }
+
+  function chooseRecorderMime() {
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+    return candidates.find((type) => window.MediaRecorder?.isTypeSupported?.(type)) || '';
+  }
+
+  async function getMicrophoneStream() {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Браузер не поддерживает доступ к микрофону.');
+    return navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     });
-
-    dictaphoneChunks = [];
-    dictaphoneRecorder = makeRecorder(dictaphoneStream);
-    dictaphoneRecorder.addEventListener('dataavailable', (event) => {
-      if (event.data?.size) dictaphoneChunks.push(event.data);
-    });
-    dictaphoneRecorder.addEventListener('stop', finalizeDictaphone, { once: true });
-    dictaphoneRecorder.start(1000);
-
-    setIndicator(els.dictaphoneMicIndicator, true);
-    if (els.dictaphoneMicStatus) els.dictaphoneMicStatus.textContent = 'Микрофон: запись идёт';
-    setDictaphoneStatus('ИДЁТ ЗАПИСЬ', 'recording');
-    els.startDictaphoneBtn?.classList.add('hidden');
-    els.stopDictaphoneBtn?.classList.remove('hidden');
-    startTimer('dictaphone');
-    showToast('Диктофон запущен');
-  } catch (error) {
-    console.error(error);
-    setDictaphoneStatus('НЕ УДАЛОСЬ ПОДКЛЮЧИТЬ МИКРОФОН', 'error');
-    showToast(error?.name === 'NotAllowedError' ? 'Разреши доступ к микрофону' : (error?.message || 'Ошибка микрофона'), 'error');
-  }
-}
-
-function stopDictaphone() {
-  if (!dictaphoneRecorder || dictaphoneRecorder.state === 'inactive') return;
-  setDictaphoneStatus('СОХРАНЯЮ ЗАПИСЬ…', 'active');
-  stopTimer('dictaphone');
-  dictaphoneRecorder.stop();
-  dictaphoneStream?.getTracks().forEach((track) => track.stop());
-}
-
-async function finalizeDictaphone() {
-  const mimeType = dictaphoneRecorder?.mimeType || dictaphoneChunks[0]?.type || 'audio/webm';
-  const blob = new Blob(dictaphoneChunks, { type: mimeType });
-  const ext = recorderExtension(mimeType);
-  const file = new File([blob], `dictaphone_${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`, { type: mimeType });
-
-  setIndicator(els.dictaphoneMicIndicator, false);
-  if (els.dictaphoneMicStatus) els.dictaphoneMicStatus.textContent = 'Микрофон: запись завершена';
-  setDictaphoneStatus('ЗАПИСЬ ГОТОВА', 'idle');
-  els.startDictaphoneBtn?.classList.remove('hidden');
-  els.stopDictaphoneBtn?.classList.add('hidden');
-  selectFile(file, { label: 'ДИКТОФОН', downloadableBlob: blob });
-  showToast('Запись диктофона готова');
-
-  if (els.dictaphoneAutoTranscribeToggle?.checked) {
-    await transcribeSelectedFile();
-  }
-}
-
-async function createMixedAudioStream(systemStream, micStream) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) throw new Error('Браузер не поддерживает Web Audio API.');
-  liveAudioContext = new AudioContextClass();
-  const destination = liveAudioContext.createMediaStreamDestination();
-
-  const systemTracks = systemStream.getAudioTracks();
-  if (!systemTracks.length) throw new Error('В выбранном источнике нет аудио. Включи «Поделиться аудио» в окне браузера.');
-
-  const systemOnly = new MediaStream(systemTracks);
-  const systemSource = liveAudioContext.createMediaStreamSource(systemOnly);
-  systemSource.connect(destination);
-
-  if (micStream?.getAudioTracks().length) {
-    const micSource = liveAudioContext.createMediaStreamSource(new MediaStream(micStream.getAudioTracks()));
-    micSource.connect(destination);
   }
 
-  return destination.stream;
-}
+  async function startCapture() {
+    if (state.captureRecorder?.state === 'recording' || state.captureStopping) return;
+    hideCaptureDiagnostic();
 
-async function startLiveCapture() {
-  if (liveRecorder?.state === 'recording') return;
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    showToast('Захват экрана недоступен. Открой сайт по HTTPS в Chrome/Edge.', 'error');
-    return;
-  }
+    if (!window.isSecureContext) {
+      setCaptureStatus('error', 'НУЖЕН HTTPS');
+      showCaptureDiagnostic('Браузер заблокировал захват', 'Открой Speech Lab через HTTPS (GitHub Pages подходит). На обычном HTTP захват экрана и микрофона недоступен.', { retryTab: false });
+      return;
+    }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setCaptureStatus('error', 'ЗАХВАТ НЕ ПОДДЕРЖИВАЕТСЯ');
+      showCaptureDiagnostic('Нет Screen Capture API', 'Открой сайт в актуальном Chrome или Edge на компьютере.', { retryTab: false });
+      return;
+    }
 
-  try {
-    stoppingLive = false;
-    setCaptureStatus('ВЫБЕРИ ИСТОЧНИК В ОКНЕ БРАУЗЕРА…', 'active');
+    stopMediaStream(state.displayStream); stopMediaStream(state.micStream);
+    state.displayStream = null; state.micStream = null;
+    setCaptureStatus('working', 'ВЫБЕРИ ИСТОЧНИК В ОКНЕ БРАУЗЕРА');
+    setIndicator(els.systemIndicator, els.systemStatus, null, 'Звук встречи: ожидаю выбор…');
+    setIndicator(els.micIndicator, els.micStatus, null, els.micToggle.checked ? 'Микрофон: подключу после выбора…' : 'Микрофон: выключен');
+
     const surface = preferredSurface();
-
-    const displayOptions = {
+    const constraints = {
       video: { displaySurface: surface },
-      audio: true,
-      preferCurrentTab: surface === 'browser',
-      selfBrowserSurface: 'exclude',
-      surfaceSwitching: 'include',
+      audio: { suppressLocalAudioPlayback: false },
       systemAudio: 'include',
+      surfaceSwitching: 'include',
+      selfBrowserSurface: 'exclude',
     };
 
-    liveDisplayStream = await navigator.mediaDevices.getDisplayMedia(displayOptions);
-    const audioTracks = liveDisplayStream.getAudioTracks();
-    if (!audioTracks.length) {
-      liveDisplayStream.getTracks().forEach((track) => track.stop());
-      liveDisplayStream = null;
-      throw new Error('Звук не передаётся. Повтори выбор и включи «Поделиться аудио» / «Share audio».');
+    try {
+      state.displayStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+    } catch (error) {
+      const cancelled = error?.name === 'NotAllowedError';
+      setCaptureStatus(cancelled ? 'idle' : 'error', cancelled ? 'ВЫБОР ОТМЕНЁН' : 'ОШИБКА ВЫБОРА ИСТОЧНИКА');
+      setIndicator(els.systemIndicator, els.systemStatus, false, 'Звук встречи: не подключён');
+      setIndicator(els.micIndicator, els.micStatus, false, 'Микрофон: не подключён');
+      if (!cancelled) showCaptureDiagnostic('Не удалось открыть источник', mediaErrorMessage(error, 'Захват экрана'), { testMic: true });
+      return;
     }
 
-    const videoTrack = liveDisplayStream.getVideoTracks()[0];
+    const videoTrack = state.displayStream.getVideoTracks()[0];
+    const displayAudioTracks = state.displayStream.getAudioTracks();
     const actualSurface = videoTrack?.getSettings?.().displaySurface || surface;
-    safeStorageSet('speechLabLastDisplaySurface', actualSurface);
-    if (els.lastSourceText) els.lastSourceText.textContent = sourceLabel(actualSurface);
+    safeStorageSet('speechlab.lastSurface', actualSurface);
+    els.lastSourceText.textContent = displaySurfaceLabel(actualSurface);
 
-    if (els.micToggle?.checked) {
-      try {
-        liveMicStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: false,
-        });
-      } catch (micError) {
-        liveMicStream = null;
-        showToast('Звук встречи пишется, но микрофон не подключён', 'error');
-      }
+    let micError = null;
+    if (els.micToggle.checked) {
+      try { state.micStream = await getMicrophoneStream(); }
+      catch (error) { micError = error; state.micStream = null; }
     }
 
-    const mixedStream = await createMixedAudioStream(liveDisplayStream, liveMicStream);
-    liveChunks = [];
-    liveRecorder = makeRecorder(mixedStream);
-    liveRecorder.addEventListener('dataavailable', (event) => {
-      if (event.data?.size) liveChunks.push(event.data);
-    });
-    liveRecorder.addEventListener('stop', finalizeLiveCapture, { once: true });
-    liveRecorder.start(1000);
+    const systemOk = displayAudioTracks.length > 0 && displayAudioTracks.some((t) => t.readyState === 'live');
+    const micOk = !!state.micStream?.getAudioTracks?.().some((t) => t.readyState === 'live');
 
-    setIndicator(els.systemIndicator, true);
-    if (els.systemStatus) els.systemStatus.textContent = `Звук встречи: подключён · ${sourceLabel(actualSurface)}`;
-    setIndicator(els.micIndicator, Boolean(liveMicStream));
-    if (els.micStatus) els.micStatus.textContent = liveMicStream ? 'Микрофон: подключён' : 'Микрофон: выключен';
-    setCaptureStatus('ИДЁТ ЗАПИСЬ', 'recording');
-    els.startCaptureBtn?.classList.add('hidden');
-    els.stopCaptureBtn?.classList.remove('hidden');
-    startTimer('live');
-
-    const endTrack = videoTrack || audioTracks[0];
-    endTrack?.addEventListener('ended', () => {
-      if (!stoppingLive && liveRecorder?.state === 'recording') stopLiveCapture();
-    }, { once: true });
-
-    showToast('Захват звука начался');
-  } catch (error) {
-    console.error(error);
-    const cancelled = error?.name === 'NotAllowedError' || error?.name === 'AbortError';
-    setCaptureStatus(cancelled ? 'ВЫБОР ИСТОЧНИКА ОТМЕНЁН' : 'ОШИБКА ЗАХВАТА', cancelled ? 'idle' : 'error');
-    showToast(cancelled ? 'Источник не выбран' : (error?.message || 'Не удалось начать захват'), 'error');
-    cleanupLiveSources();
-  }
-}
-
-function stopLiveCapture() {
-  if (!liveRecorder || liveRecorder.state === 'inactive') return;
-  stoppingLive = true;
-  setCaptureStatus('СОХРАНЯЮ ЗАПИСЬ…', 'active');
-  stopTimer('live');
-  liveRecorder.stop();
-  liveDisplayStream?.getTracks().forEach((track) => track.stop());
-  liveMicStream?.getTracks().forEach((track) => track.stop());
-}
-
-function cleanupLiveSources() {
-  liveDisplayStream?.getTracks().forEach((track) => track.stop());
-  liveMicStream?.getTracks().forEach((track) => track.stop());
-  liveDisplayStream = null;
-  liveMicStream = null;
-  if (liveAudioContext) liveAudioContext.close().catch(() => {});
-  liveAudioContext = null;
-}
-
-async function finalizeLiveCapture() {
-  const mimeType = liveRecorder?.mimeType || liveChunks[0]?.type || 'audio/webm';
-  const blob = new Blob(liveChunks, { type: mimeType });
-  const ext = recorderExtension(mimeType);
-  const file = new File([blob], `meeting_${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`, { type: mimeType });
-
-  setIndicator(els.systemIndicator, false);
-  setIndicator(els.micIndicator, false);
-  if (els.systemStatus) els.systemStatus.textContent = 'Звук встречи: запись завершена';
-  if (els.micStatus) els.micStatus.textContent = 'Микрофон: не подключён';
-  setCaptureStatus('ЗАПИСЬ ГОТОВА', 'idle');
-  els.startCaptureBtn?.classList.remove('hidden');
-  els.stopCaptureBtn?.classList.add('hidden');
-  cleanupLiveSources();
-
-  selectFile(file, { label: 'ЖИВОЙ РАЗГОВОР', downloadableBlob: blob });
-  showToast('Запись встречи готова');
-  if (els.autoTranscribeToggle?.checked) await transcribeSelectedFile();
-}
-
-async function decodeToMono16k(file) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) throw new Error('Браузер не поддерживает AudioContext.');
-
-  const context = new AudioContextClass();
-  try {
-    const bytes = await file.arrayBuffer();
-    const decoded = await context.decodeAudioData(bytes.slice(0));
-    currentDuration = decoded.duration;
-
-    const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
-    const source = offline.createBufferSource();
-    source.buffer = decoded;
-    source.connect(offline.destination);
-    source.start(0);
-    const rendered = await offline.startRendering();
-    const mono = rendered.getChannelData(0);
-    return new Float32Array(mono);
-  } catch (error) {
-    console.error(error);
-    throw new Error('Не удалось прочитать аудиодорожку. Попробуй MP3, WAV, M4A, OGG или WEBM.');
-  } finally {
-    await context.close().catch(() => {});
-  }
-}
-
-function getProfile() {
-  const quality = els.qualitySelect?.value || 'auto';
-  const manualModel = els.modelSelect?.value || 'auto';
-  let modelId = manualModel;
-  if (manualModel === 'auto') {
-    modelId = quality === 'fast' ? 'onnx-community/whisper-tiny' : 'onnx-community/whisper-base';
-  }
-
-  const profiles = {
-    fast: { chunkSeconds: 29, overlapSeconds: 0, useVad: true, vadThreshold: 0.0045, noisyMode: false },
-    balanced: { chunkSeconds: 28, overlapSeconds: 1.5, useVad: true, vadThreshold: 0.0042, noisyMode: false },
-    accurate: { chunkSeconds: 25, overlapSeconds: 2, useVad: true, vadThreshold: 0.0038, noisyMode: false },
-    noisy: { chunkSeconds: 18, overlapSeconds: 1.5, useVad: true, vadThreshold: 0.0055, noisyMode: true },
-    auto: { chunkSeconds: 28, overlapSeconds: 1.5, useVad: true, vadThreshold: 0.0042, noisyMode: false },
-  };
-
-  return {
-    quality,
-    modelId,
-    preferredDevice: navigator.gpu ? 'webgpu' : 'wasm',
-    ...profiles[quality] || profiles.auto,
-  };
-}
-
-function updateEngineHint() {
-  if (!els.engineHint) return;
-  const profile = getProfile();
-  const modelName = profile.modelId.includes('tiny') ? 'Whisper Tiny' : profile.modelId.includes('small') ? 'Whisper Small' : 'Whisper Base';
-  const modeName = profile.quality === 'fast' ? 'БЫСТРО' : profile.quality === 'accurate' ? 'ТОЧНО' : profile.quality === 'noisy' ? 'ШУМ' : 'БАЛАНС';
-  els.engineHint.textContent = `${modeName} · ${modelName} · ${navigator.gpu ? 'WebGPU при возможности' : 'Worker / WASM'}. Интерфейс не зависит от загрузки AI-библиотеки.`;
-}
-
-function ensureWorker() {
-  if (worker) return worker;
-  worker = new Worker(`./transcription-worker.js?build=${BUILD.stamp}`, { type: 'module' });
-  worker.addEventListener('message', handleWorkerMessage);
-  worker.addEventListener('error', (event) => {
-    console.error('Worker error', event);
-    if (busy) {
-      setProgress(0, 'Ошибка Worker', 'Не удалось запустить AI-модель. Проверь интернет и перезагрузи страницу.');
-      showToast('Ошибка модуля распознавания', 'error');
-      finishJob();
+    if (systemOk) {
+      const label = displayAudioTracks[0]?.label ? ` · ${displayAudioTracks[0].label}` : '';
+      setIndicator(els.systemIndicator, els.systemStatus, true, `Звук встречи: подключён${label}`);
+    } else {
+      setIndicator(els.systemIndicator, els.systemStatus, false, 'Звук встречи: НЕ ПЕРЕДАН браузером');
     }
-  });
-  return worker;
-}
 
-function handleWorkerMessage(event) {
-  const message = event.data || {};
-  if (!activeJobId || message.jobId !== activeJobId) return;
+    if (els.micToggle.checked) {
+      setIndicator(els.micIndicator, els.micStatus, micOk, micOk ? 'Микрофон: подключён' : mediaErrorMessage(micError, 'Микрофон'));
+    } else {
+      setIndicator(els.micIndicator, els.micStatus, null, 'Микрофон: выключен');
+    }
 
-  if (message.type === 'model-progress') {
-    const mapped = 8 + Math.round((message.progress || 0) * 0.42);
-    setProgress(mapped, 'Загружаю AI-модель', message.file ? `Модель: ${message.file}` : 'Первый запуск может занять время.');
-    return;
+    if (!systemOk && !micOk) {
+      stopMediaStream(state.displayStream); stopMediaStream(state.micStream); state.displayStream = null; state.micStream = null;
+      setCaptureStatus('error', 'ИСТОЧНИКИ БЕЗ ЗВУКА');
+      showNoSystemAudioHelp(actualSurface, micError);
+      return;
+    }
+
+    if (!systemOk) {
+      showNoSystemAudioHelp(actualSurface, micError, true);
+    }
+
+    try {
+      const recordStream = await buildAudioMix(state.displayStream, state.micStream);
+      const mimeType = chooseRecorderMime();
+      state.captureChunks = [];
+      state.captureRecorder = new MediaRecorder(recordStream, mimeType ? { mimeType } : undefined);
+      state.captureRecorder.addEventListener('dataavailable', (event) => { if (event.data?.size) state.captureChunks.push(event.data); });
+      state.captureRecorder.addEventListener('stop', finishCaptureRecording, { once: true });
+      state.captureRecorder.addEventListener('error', (event) => {
+        setCaptureStatus('error', 'ОШИБКА ЗАПИСИ');
+        showCaptureDiagnostic('MediaRecorder остановлен', event.error?.message || 'Не удалось записать аудио.', { retryTab: true });
+      });
+      state.captureRecorder.start(1000);
+      state.captureStartedAt = Date.now();
+      startTimer('capture');
+      setCaptureStatus(systemOk ? 'recording' : 'warning', systemOk ? 'ИДЁТ ЗАПИСЬ' : 'ЗАПИСЬ ТОЛЬКО С МИКРОФОНА');
+      els.startCaptureBtn.classList.add('hidden');
+      els.stopCaptureBtn.classList.remove('hidden');
+      videoTrack?.addEventListener('ended', () => stopCapture(), { once: true });
+      showToast(systemOk ? 'Захват звука начат' : 'Системный звук не получен — пишется только микрофон', systemOk ? 'ok' : 'error', 4200);
+    } catch (error) {
+      stopMediaStream(state.displayStream); stopMediaStream(state.micStream); state.displayStream = null; state.micStream = null;
+      setCaptureStatus('error', 'НЕ УДАЛОСЬ СОЗДАТЬ ЗАПИСЬ');
+      showCaptureDiagnostic('Ошибка аудиомикшера', error?.message || String(error), { retryTab: true });
+    }
   }
 
-  if (message.type === 'status') {
-    setProgress(10, 'Подготавливаю AI', message.message || 'Запуск модели…');
-    return;
+  function showNoSystemAudioHelp(surface, micError, micOnly = false) {
+    let text;
+    if (surface === 'browser') {
+      text = 'Вкладка выбрана, но браузер не передал её аудио. Повтори захват, выбери вкладку Zoom/Толк/Meet и включи «Также передавать аудио вкладки» / «Share tab audio» в системном окне.';
+    } else if (surface === 'window') {
+      text = 'Окно приложения выбрано без аудиодорожки. Для Zoom/Толк в браузере надёжнее выбрать «Вкладка браузера». Для Zoom Desktop попробуй «Экран целиком» с системным аудио — поддержка зависит от ОС и браузера.';
+    } else {
+      text = 'Экран выбран без системной аудиодорожки. На некоторых ОС браузер не умеет отдавать звук всего экрана. Если встреча открыта в браузере — выбери именно вкладку и включи передачу аудио.';
+    }
+    if (micError) text += ` Микрофон тоже не подключён: ${mediaErrorMessage(micError, 'микрофон')}`;
+    if (micOnly) text += ' Сейчас Speech Lab может записывать только твой микрофон; звук собеседников в запись не попадёт.';
+    showCaptureDiagnostic('Звук встречи не получен', text, { retryTab: true, testMic: true });
   }
 
-  if (message.type === 'backend-fallback') {
-    setProgress(12, 'Переключаю движок', 'WebGPU недоступен — продолжаю через Worker/WASM.');
-    return;
+  async function buildAudioMix(displayStream, micStream) {
+    const tracks = [
+      ...(displayStream?.getAudioTracks?.() || []),
+      ...(micStream?.getAudioTracks?.() || []),
+    ].filter((t) => t.readyState === 'live');
+    if (!tracks.length) throw new Error('Нет доступных аудиодорожек для записи.');
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return new MediaStream(tracks);
+    state.mixContext = new AudioContextClass();
+    await state.mixContext.resume().catch(() => {});
+    state.mixDestination = state.mixContext.createMediaStreamDestination();
+
+    if (displayStream?.getAudioTracks?.().length) {
+      const s = new MediaStream(displayStream.getAudioTracks());
+      state.mixContext.createMediaStreamSource(s).connect(state.mixDestination);
+    }
+    if (micStream?.getAudioTracks?.().length) {
+      const s = new MediaStream(micStream.getAudioTracks());
+      state.mixContext.createMediaStreamSource(s).connect(state.mixDestination);
+    }
+    return state.mixDestination.stream;
   }
 
-  if (message.type === 'engine') {
-    setProgress(52, 'Модель готова', `${message.device === 'webgpu' ? 'WebGPU' : 'WASM'} · начинаю распознавание.`);
-    return;
+  function startTimer(kind) {
+    const isCapture = kind === 'capture';
+    const started = isCapture ? state.captureStartedAt : state.dictaphoneStartedAt;
+    const el = isCapture ? els.recordTimer : els.dictaphoneTimer;
+    const tick = () => { if (el) el.textContent = formatTime((Date.now() - started) / 1000); };
+    tick();
+    const id = setInterval(tick, 500);
+    if (isCapture) state.captureTimerId = id; else state.dictaphoneTimerId = id;
   }
 
-  if (message.type === 'chunk-progress') {
-    const ratio = message.total ? message.index / message.total : 0;
-    const percent = 52 + Math.round(ratio * 47);
-    const elapsed = Math.max(1, (Date.now() - jobStartedAt) / 1000);
-    const eta = ratio > 0.02 ? Math.max(0, elapsed * (1 / ratio - 1)) : null;
-    const note = `Фрагмент ${message.index} из ${message.total}${message.skipped ? ` · пропущено тишины: ${message.skipped}` : ''}${Number.isFinite(eta) ? ` · осталось ≈ ${formatTime(eta)}` : ''}`;
-    setProgress(percent, 'Распознаю речь', note);
-    if (message.partialText) renderPartialText(message.partialText);
-    return;
+  function stopTimer(kind) {
+    const key = kind === 'capture' ? 'captureTimerId' : 'dictaphoneTimerId';
+    clearInterval(state[key]); state[key] = null;
   }
 
-  if (message.type === 'result') {
-    setProgress(100, 'Готово', 'Текст можно редактировать, копировать и выгружать.');
-    renderResult(message.output, currentDuration);
-    showToast('Распознавание завершено');
-    finishJob();
-    return;
+  function stopMediaStream(stream) { stream?.getTracks?.().forEach((track) => { try { track.stop(); } catch {} }); }
+
+  function stopCapture() {
+    if (state.captureStopping) return;
+    state.captureStopping = true;
+    stopTimer('capture');
+    setCaptureStatus('working', 'ЗАВЕРШАЮ ЗАПИСЬ…');
+    if (state.captureRecorder?.state === 'recording') state.captureRecorder.stop(); else finishCaptureRecording();
   }
 
-  if (message.type === 'cancelled') {
-    setProgress(0, 'Остановлено', 'Распознавание остановлено пользователем.');
-    showToast('Распознавание остановлено');
-    finishJob();
-    return;
+  async function finishCaptureRecording() {
+    const duration = Math.max(0, (Date.now() - state.captureStartedAt) / 1000);
+    const mime = state.captureRecorder?.mimeType || 'audio/webm';
+    const blob = new Blob(state.captureChunks, { type: mime });
+    stopMediaStream(state.displayStream); stopMediaStream(state.micStream); stopMediaStream(state.mixDestination?.stream);
+    state.displayStream = null; state.micStream = null;
+    await state.mixContext?.close?.().catch(() => {}); state.mixContext = null; state.mixDestination = null;
+    state.captureRecorder = null; state.captureStopping = false;
+    els.startCaptureBtn.classList.remove('hidden'); els.stopCaptureBtn.classList.add('hidden');
+    setIndicator(els.systemIndicator, els.systemStatus, null, 'Звук встречи: не подключён');
+    setIndicator(els.micIndicator, els.micStatus, null, 'Микрофон: не подключён');
+
+    if (blob.size > 0) {
+      const ext = mime.includes('ogg') ? 'ogg' : 'webm';
+      const file = new File([blob], `meeting_${timestampForFile()}.${ext}`, { type: mime });
+      selectFile(file, { label: 'ЗАПИСЬ РАЗГОВОРА', duration, keepMode: true });
+      state.recordedBlob = blob;
+      els.downloadAudioBtn?.classList.remove('hidden');
+      setCaptureStatus('idle', 'ЗАПИСЬ ГОТОВА');
+      if (els.autoTranscribeToggle.checked) await startTranscription();
+    } else {
+      setCaptureStatus('error', 'ПУСТАЯ ЗАПИСЬ');
+      showCaptureDiagnostic('Аудиоданные не записались', 'Повтори захват и проверь, что хотя бы один источник показывает статус «подключён».', { retryTab: true });
+    }
   }
 
-  if (message.type === 'error') {
-    console.error(message);
-    setProgress(0, 'Ошибка распознавания', message.message || 'Не удалось обработать запись.');
-    showToast(message.message || 'Ошибка распознавания', 'error');
-    finishJob();
+  async function testMicrophone() {
+    els.testMicBtn.disabled = true;
+    try {
+      const stream = await getMicrophoneStream();
+      setIndicator(els.micIndicator, els.micStatus, true, 'Микрофон: разрешение работает');
+      showToast('Микрофон доступен');
+      stopMediaStream(stream);
+    } catch (error) {
+      setIndicator(els.micIndicator, els.micStatus, false, mediaErrorMessage(error, 'Микрофон'));
+      showCaptureDiagnostic('Микрофон недоступен', mediaErrorMessage(error, 'Микрофон'), { retryTab: true, testMic: false });
+    } finally { els.testMicBtn.disabled = false; }
   }
-}
 
-function finishJob() {
-  activeJobId = null;
-  setBusy(false);
-}
-
-function cancelTranscription() {
-  if (!busy) return;
-  if (worker) {
-    worker.terminate();
-    worker = null;
+  async function startDictaphone() {
+    if (state.dictaphoneRecorder?.state === 'recording') return;
+    if (!window.isSecureContext) return showToast('Для микрофона нужен HTTPS', 'error');
+    try {
+      state.dictaphoneStream = await getMicrophoneStream();
+      setIndicator(els.dictaphoneMicIndicator, els.dictaphoneMicStatus, true, 'Микрофон: подключён');
+      const mime = chooseRecorderMime();
+      state.dictaphoneChunks = [];
+      state.dictaphoneRecorder = new MediaRecorder(state.dictaphoneStream, mime ? { mimeType: mime } : undefined);
+      state.dictaphoneRecorder.addEventListener('dataavailable', (e) => { if (e.data?.size) state.dictaphoneChunks.push(e.data); });
+      state.dictaphoneRecorder.addEventListener('stop', finishDictaphone, { once: true });
+      state.dictaphoneRecorder.start(1000);
+      state.dictaphoneStartedAt = Date.now(); startTimer('dictaphone');
+      els.dictaphoneStatus.className = 'capture-status recording'; els.dictaphoneStatusText.textContent = 'ИДЁТ ЗАПИСЬ';
+      els.startDictaphoneBtn.classList.add('hidden'); els.stopDictaphoneBtn.classList.remove('hidden');
+    } catch (error) {
+      els.dictaphoneStatus.className = 'capture-status error'; els.dictaphoneStatusText.textContent = 'МИКРОФОН НЕДОСТУПЕН';
+      setIndicator(els.dictaphoneMicIndicator, els.dictaphoneMicStatus, false, mediaErrorMessage(error, 'Микрофон'));
+      showToast(mediaErrorMessage(error, 'Микрофон'), 'error', 4200);
+    }
   }
-  activeJobId = null;
-  setBusy(false);
-  setProgress(0, 'Остановлено', 'Worker остановлен. Можно запустить распознавание снова.');
-  showToast('Распознавание остановлено');
-}
 
-async function transcribeSelectedFile() {
-  if (!selectedFile || busy) return;
-  setBusy(true);
-  resetResult();
-  partialTranscript = '';
-
-  try {
-    setProgress(3, 'Читаю аудио', 'Подготавливаю запись в фоне.');
-    const audio = await decodeToMono16k(selectedFile);
-    setProgress(7, 'Аудио готово', `${formatTime(currentDuration)} · 16 кГц mono`);
-
-    const profile = getProfile();
-    const jobId = `job-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    activeJobId = jobId;
-    jobStartedAt = Date.now();
-
-    const targetWorker = ensureWorker();
-    targetWorker.postMessage({
-      type: 'transcribe',
-      jobId,
-      audioBuffer: audio.buffer,
-      modelId: profile.modelId,
-      preferredDevice: profile.preferredDevice,
-      language: els.languageSelect?.value || 'russian',
-      chunkSeconds: profile.chunkSeconds,
-      overlapSeconds: profile.overlapSeconds,
-      useVad: profile.useVad,
-      vadThreshold: profile.vadThreshold,
-      noisyMode: profile.noisyMode,
-      cleanupMode: els.cleanupSelect?.value || 'standard',
-    }, [audio.buffer]);
-  } catch (error) {
-    console.error(error);
-    setProgress(0, 'Ошибка', error?.message || 'Не удалось подготовить аудио.');
-    showToast(error?.message || 'Ошибка аудио', 'error');
-    finishJob();
+  function stopDictaphone() {
+    stopTimer('dictaphone');
+    if (state.dictaphoneRecorder?.state === 'recording') state.dictaphoneRecorder.stop();
   }
-}
 
-async function copyTranscript() {
-  const text = els.transcript?.value.trim() || '';
-  if (!text) return showToast('Текста пока нет', 'error');
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast('Текст скопирован');
-  } catch {
-    els.transcript.focus();
-    els.transcript.select();
-    document.execCommand('copy');
-    showToast('Текст скопирован');
+  async function finishDictaphone() {
+    const duration = Math.max(0, (Date.now() - state.dictaphoneStartedAt) / 1000);
+    const mime = state.dictaphoneRecorder?.mimeType || 'audio/webm';
+    const blob = new Blob(state.dictaphoneChunks, { type: mime });
+    stopMediaStream(state.dictaphoneStream); state.dictaphoneStream = null; state.dictaphoneRecorder = null;
+    els.startDictaphoneBtn.classList.remove('hidden'); els.stopDictaphoneBtn.classList.add('hidden');
+    els.dictaphoneStatus.className = 'capture-status idle'; els.dictaphoneStatusText.textContent = blob.size ? 'ЗАПИСЬ ГОТОВА' : 'ПУСТАЯ ЗАПИСЬ';
+    setIndicator(els.dictaphoneMicIndicator, els.dictaphoneMicStatus, null, 'Микрофон: не подключён');
+    if (!blob.size) return;
+    const ext = mime.includes('ogg') ? 'ogg' : 'webm';
+    const file = new File([blob], `dictaphone_${timestampForFile()}.${ext}`, { type: mime });
+    selectFile(file, { label: 'ДИКТОФОН', duration, keepMode: true });
+    state.recordedBlob = blob; els.downloadAudioBtn?.classList.remove('hidden');
+    if (els.dictaphoneAutoTranscribeToggle.checked) await startTranscription();
   }
-}
 
-function downloadText() {
-  const text = els.transcript?.value.trim() || '';
-  if (!text) return showToast('Текста пока нет', 'error');
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  downloadBlob(blob, `${safeFileBase(selectedFile?.name || 'transcript')}_transcript.txt`);
-}
+  function looksLikeMedia(file) {
+    if (!file) return false;
+    return file.type.startsWith('audio/') || file.type.startsWith('video/') || /\.(mp3|wav|m4a|aac|ogg|webm|mp4|mpeg|mpga)$/i.test(file.name || '');
+  }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+  function selectFile(file, options = {}) {
+    if (!looksLikeMedia(file)) return showToast('Нужен аудио- или видеофайл', 'error');
+    state.selectedFile = file; state.recordedBlob = file; resetResult();
+    els.fileLabel.textContent = options.label || 'ФАЙЛ';
+    els.fileName.textContent = file.name || 'audio';
+    els.fileMeta.textContent = `${formatBytes(file.size)} · ${file.type || 'медиафайл'}`;
+    els.fileCard.classList.remove('hidden'); els.transcribeBtn.disabled = false;
+    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+    state.previewUrl = URL.createObjectURL(file); els.audioPreview.src = state.previewUrl; els.audioPreview.classList.remove('hidden');
+    if (Number.isFinite(options.duration)) state.currentDuration = options.duration;
+    if (!options.keepMode && state.mode !== 'file') setMode('file');
+    updateEngineHint();
+  }
 
-async function downloadExcel() {
-  const text = els.transcript?.value.trim() || '';
-  if (!text) return showToast('Текста пока нет', 'error');
+  function clearFile() {
+    if (state.transcriptionBusy) return;
+    state.selectedFile = null; state.recordedBlob = null; state.currentDuration = 0; state.lastSegments = [];
+    els.fileInput.value = ''; els.fileCard.classList.add('hidden'); els.audioPreview.classList.add('hidden'); els.audioPreview.removeAttribute('src');
+    els.downloadAudioBtn?.classList.add('hidden');
+    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl); state.previewUrl = null;
+    els.transcribeBtn.disabled = true; els.progressWrap.classList.add('hidden'); resetResult();
+  }
 
-  try {
-    showToast('Формирую Excel…');
-    const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs');
-    const workbook = XLSX.utils.book_new();
-    const textRows = [
-      ['Параметр', 'Значение'],
-      ['Версия', BUILD.version],
-      ['Сборка', `${BUILD.date} ${BUILD.time}`],
-      ['Источник', selectedFileLabel],
-      ['Файл', selectedFile?.name || '—'],
-      ['Длительность', formatTime(currentDuration)],
-      ['Текст', text],
-    ];
-    const textSheet = XLSX.utils.aoa_to_sheet(textRows);
-    textSheet['!cols'] = [{ wch: 22 }, { wch: 110 }];
-    XLSX.utils.book_append_sheet(workbook, textSheet, 'Текст');
+  function resetResult() {
+    els.resultEmpty.classList.remove('hidden'); els.resultBlock.classList.add('hidden'); els.transcript.value = '';
+    els.wordCount.textContent = '0'; els.segmentCount.textContent = '0'; els.audioDuration.textContent = '—'; els.segmentsList.innerHTML = '';
+    els.segmentsBox.open = false; state.lastSegments = [];
+  }
 
-    const segmentRows = [['Начало', 'Конец', 'Говорящий', 'Текст']];
-    const chunks = Array.isArray(currentOutput?.chunks) ? currentOutput.chunks : [];
+  function setProgress(percent, title, note = '') {
+    const p = Math.max(0, Math.min(100, Math.round(percent)));
+    els.progressWrap.classList.remove('hidden'); els.progressBar.style.width = `${p}%`; els.progressValue.textContent = `${p}%`;
+    els.statusText.textContent = title; els.statusNote.textContent = note;
+  }
+
+  function setTranscriptionBusy(value) {
+    state.transcriptionBusy = value;
+    els.transcribeBtn.disabled = !value && !state.selectedFile;
+    els.fileInput.disabled = value; els.removeFileBtn.disabled = value;
+    els.languageSelect.disabled = value; els.modelSelect.disabled = value; els.qualitySelect.disabled = value; els.cleanupSelect.disabled = value;
+    els.transcribeBtnText.textContent = value ? 'ОСТАНОВИТЬ' : 'РАСПОЗНАТЬ РЕЧЬ';
+  }
+
+  function getProfile() {
+    let q = els.qualitySelect.value;
+    if (q === 'auto') q = 'balanced';
+    const profiles = {
+      fast: { quality: 'fast', model: 'onnx-community/whisper-tiny', chunk: 29, overlap: 0, vad: true, detailedTimestamps: false },
+      balanced: { quality: 'balanced', model: 'onnx-community/whisper-base', chunk: 28, overlap: 1.5, vad: true, detailedTimestamps: false },
+      accurate: { quality: 'accurate', model: 'onnx-community/whisper-base', chunk: 25, overlap: 2, vad: true, detailedTimestamps: true },
+      noisy: { quality: 'noisy', model: 'onnx-community/whisper-base', chunk: 18, overlap: 2, vad: true, detailedTimestamps: true },
+    };
+    const p = { ...profiles[q] };
+    if (els.modelSelect.value !== 'auto') p.model = els.modelSelect.value;
+    p.cleanup = els.cleanupSelect.value;
+    return p;
+  }
+
+  function updateEngineHint() {
+    const p = getProfile(); const label = p.quality.toUpperCase();
+    const modelName = p.model.includes('tiny') ? 'Whisper Tiny' : p.model.includes('small') ? 'Whisper Small' : 'Whisper Base';
+    els.engineHint.textContent = `${label} · ${modelName} · блок ${p.chunk} сек${p.overlap ? ` + перекрытие ${p.overlap} сек` : ''}. AI запускается в отдельном Worker; интерфейс остаётся отзывчивым.`;
+  }
+
+  async function decodeToMono16k(file) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('Браузер не поддерживает AudioContext.');
+    const ctx = new AudioContextClass();
+    try {
+      const buffer = await file.arrayBuffer();
+      const decoded = await ctx.decodeAudioData(buffer.slice(0));
+      state.currentDuration = decoded.duration;
+      const targetRate = 16000;
+      const length = Math.max(1, Math.ceil(decoded.duration * targetRate));
+      const offline = new OfflineAudioContext(1, length, targetRate);
+      const source = offline.createBufferSource(); source.buffer = decoded; source.connect(offline.destination); source.start();
+      const rendered = await offline.startRendering();
+      return new Float32Array(rendered.getChannelData(0));
+    } catch (error) {
+      throw new Error(`Не удалось декодировать аудио: ${error?.message || 'попробуй MP3/WAV/M4A/WEBM.'}`);
+    } finally { await ctx.close().catch(() => {}); }
+  }
+
+  function createWorker() {
+    return new Worker(`./transcription-worker.js?build=${BUILD.key}`, { type: 'module' });
+  }
+
+  async function startTranscription() {
+    if (state.transcriptionBusy) { cancelTranscription(); return; }
+    if (!state.selectedFile) return;
+    resetResult(); setTranscriptionBusy(true); setProgress(2, 'ПОДГОТОВКА АУДИО', 'Декодирую и привожу запись к 16 кГц mono…');
+    state.transcriptionStartedAt = performance.now();
+    try {
+      const audio = await decodeToMono16k(state.selectedFile);
+      const profile = getProfile();
+      setProgress(8, 'АУДИО ГОТОВО', `${formatTime(state.currentDuration)} · ${profile.quality.toUpperCase()} · ${profile.model.split('/').pop()}`);
+      const worker = createWorker(); state.transcriptionWorker = worker; state.transcriptionJobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const jobId = state.transcriptionJobId;
+      let lastPartial = '';
+
+      worker.onmessage = (event) => {
+        const msg = event.data || {}; if (msg.jobId && msg.jobId !== jobId) return;
+        if (msg.type === 'model-progress') {
+          setProgress(8 + (msg.progress * 0.18), 'ЗАГРУЖАЮ AI-МОДЕЛЬ', msg.file ? `Модель: ${msg.file}` : 'Первый запуск может занять время.');
+        } else if (msg.type === 'status') {
+          setProgress(20, 'ГОТОВЛЮ WHISPER', msg.message || 'Запуск модели…');
+        } else if (msg.type === 'engine') {
+          setProgress(27, 'WHISPER ГОТОВ', `Движок: ${String(msg.device || '').toUpperCase()} · модель ${msg.modelId?.split('/').pop() || ''}`);
+        } else if (msg.type === 'chunk-progress') {
+          const ratio = msg.total ? msg.index / msg.total : 0;
+          const p = 28 + ratio * 69;
+          const elapsed = (performance.now() - state.transcriptionStartedAt) / 1000;
+          const eta = ratio > 0.03 ? Math.max(0, (elapsed / ratio) - elapsed) : null;
+          setProgress(p, `РАСПОЗНАЮ · ${msg.index}/${msg.total}`, `${msg.skipped ? `Пропущено тишины: ${msg.skipped}. ` : ''}${Number.isFinite(eta) ? `Осталось ~${formatTime(eta)}.` : 'Считаю скорость…'}`);
+          if (msg.partialText) {
+            lastPartial = `${lastPartial} ${msg.partialText}`.replace(/\s+/g, ' ').trim();
+            renderLiveText(lastPartial);
+          }
+        } else if (msg.type === 'backend-fallback') {
+          showToast('WebGPU недоступен — использую CPU/WASM', 'error', 3500);
+        } else if (msg.type === 'result') {
+          renderResult(msg.output); setProgress(100, 'ГОТОВО', 'Текст можно редактировать, копировать и выгружать в Excel.');
+          finishTranscriptionWorker(); showToast('Распознавание завершено');
+        } else if (msg.type === 'error') {
+          throwWorkerError(msg.message || 'Ошибка распознавания.');
+        } else if (msg.type === 'cancelled') {
+          setProgress(0, 'ОСТАНОВЛЕНО', 'Распознавание остановлено пользователем.'); finishTranscriptionWorker();
+        }
+      };
+      worker.onerror = (event) => throwWorkerError(event.message || 'Ошибка Web Worker.');
+      const transferable = audio.buffer;
+      worker.postMessage({
+        type: 'transcribe', jobId, audioBuffer: transferable, modelId: profile.model,
+        preferredDevice: navigator.gpu ? 'webgpu' : 'wasm', language: els.languageSelect.value,
+        chunkSeconds: profile.chunk, overlapSeconds: profile.overlap, useVad: profile.vad,
+        vadThreshold: profile.quality === 'noisy' ? 0.0055 : 0.0035,
+        detailedTimestamps: profile.detailedTimestamps, cleanup: profile.cleanup, quality: profile.quality,
+      }, [transferable]);
+    } catch (error) {
+      console.error(error); setProgress(0, 'ОШИБКА', error?.message || 'Не удалось распознать запись.'); showToast(error?.message || 'Ошибка распознавания', 'error', 4500); finishTranscriptionWorker();
+    }
+  }
+
+  function throwWorkerError(message) {
+    setProgress(0, 'ОШИБКА AI', message); showToast(message, 'error', 4500); finishTranscriptionWorker();
+  }
+
+  function cancelTranscription() {
+    if (!state.transcriptionBusy) return;
+    try { state.transcriptionWorker?.postMessage({ type: 'cancel', jobId: state.transcriptionJobId }); } catch {}
+    setTimeout(() => { if (state.transcriptionBusy) { state.transcriptionWorker?.terminate(); setProgress(0, 'ОСТАНОВЛЕНО', 'Worker принудительно остановлен.'); finishTranscriptionWorker(); } }, 800);
+  }
+
+  function finishTranscriptionWorker() {
+    state.transcriptionWorker?.terminate(); state.transcriptionWorker = null; state.transcriptionJobId = null; setTranscriptionBusy(false);
+  }
+
+  function renderLiveText(text) {
+    els.resultEmpty.classList.add('hidden'); els.resultBlock.classList.remove('hidden'); els.transcript.value = text;
+    updateWordCount(); els.audioDuration.textContent = formatTime(state.currentDuration);
+  }
+
+  function renderResult(output) {
+    const text = String(output?.text || '').trim(); const chunks = Array.isArray(output?.chunks) ? output.chunks : [];
+    state.lastSegments = chunks; els.transcript.value = text; updateWordCount(); els.segmentCount.textContent = String(chunks.length); els.audioDuration.textContent = formatTime(state.currentDuration);
+    els.segmentsList.innerHTML = '';
     for (const chunk of chunks) {
-      const [start, end] = Array.isArray(chunk.timestamp) ? chunk.timestamp : [null, null];
-      segmentRows.push([formatTime(start), formatTime(end), chunk.speaker || '', chunk.text || '']);
+      const row = document.createElement('div'); row.className = 'segment';
+      const t = document.createElement('div'); t.className = 'segment-time'; const ts = Array.isArray(chunk.timestamp) ? chunk.timestamp : [0,0]; t.textContent = `${formatTime(ts[0])}–${formatTime(ts[1])}`;
+      const x = document.createElement('div'); x.className = 'segment-text'; x.textContent = chunk.speaker ? `${chunk.speaker}: ${chunk.text || ''}` : (chunk.text || ''); row.append(t,x); els.segmentsList.append(row);
     }
-    const segmentSheet = XLSX.utils.aoa_to_sheet(segmentRows);
-    segmentSheet['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 100 }];
-    XLSX.utils.book_append_sheet(workbook, segmentSheet, 'Сегменты');
-
-    XLSX.writeFile(workbook, `${safeFileBase(selectedFile?.name || 'speech_lab')}_transcript.xlsx`);
-    showToast('Excel выгружен');
-  } catch (error) {
-    console.error(error);
-    showToast('Не удалось создать Excel. Проверь интернет и повтори.', 'error');
+    els.segmentsBox.classList.toggle('hidden', chunks.length === 0); els.resultEmpty.classList.add('hidden'); els.resultBlock.classList.remove('hidden');
   }
-}
 
-function downloadRecordedAudio() {
-  if (!downloadableAudioBlob) return showToast('Записи для скачивания пока нет', 'error');
-  const ext = recorderExtension(downloadableAudioBlob.type);
-  downloadBlob(downloadableAudioBlob, `${safeFileBase(selectedFile?.name || 'speech_recording')}.${ext}`);
-}
+  function updateWordCount() {
+    const text = els.transcript.value.trim(); els.wordCount.textContent = String(text ? text.split(/\s+/u).filter(Boolean).length : 0);
+  }
 
-function bindEvents() {
-  els.liveModeBtn?.addEventListener('click', () => switchMode('live'));
-  els.dictaphoneModeBtn?.addEventListener('click', () => switchMode('dictaphone'));
-  els.fileModeBtn?.addEventListener('click', () => switchMode('file'));
+  async function copyTranscript() {
+    const text = els.transcript.value.trim(); if (!text) return showToast('Текста пока нет', 'error');
+    try { await navigator.clipboard.writeText(text); showToast('Текст скопирован'); }
+    catch { els.transcript.focus(); els.transcript.select(); document.execCommand('copy'); showToast('Текст скопирован'); }
+  }
 
-  els.autoCaptureToggle?.addEventListener('change', updateCaptureModeUI);
-  els.manualSourceSelect?.addEventListener('change', updateCaptureModeUI);
-  els.speakerLabelsToggle?.addEventListener('change', () => {
-    els.speakerConfig?.classList.toggle('hidden', !els.speakerLabelsToggle.checked);
-  });
+  function safeBaseName() {
+    return (state.selectedFile?.name || 'transcript').replace(/\.[^.]+$/, '').replace(/[^a-zA-Zа-яА-ЯёЁ0-9_-]+/g, '_').slice(0, 80) || 'transcript';
+  }
 
-  els.startCaptureBtn?.addEventListener('click', startLiveCapture);
-  els.stopCaptureBtn?.addEventListener('click', stopLiveCapture);
-  els.startDictaphoneBtn?.addEventListener('click', startDictaphone);
-  els.stopDictaphoneBtn?.addEventListener('click', stopDictaphone);
+  function downloadText() {
+    const text = els.transcript.value.trim(); if (!text) return showToast('Текста пока нет', 'error');
+    downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), `${safeBaseName()}_transcript.txt`);
+  }
 
-  els.fileInput?.addEventListener('change', (event) => {
-    const file = event.target.files?.[0];
-    if (file) selectFile(file, { label: 'ФАЙЛ' });
-  });
-  els.removeFileBtn?.addEventListener('click', clearFile);
-  els.downloadAudioBtn?.addEventListener('click', downloadRecordedAudio);
+  function downloadAudio() {
+    if (!state.recordedBlob) return showToast('Записи пока нет', 'error');
+    const ext = state.recordedBlob.type?.includes('ogg') ? 'ogg' : 'webm'; downloadBlob(state.recordedBlob, `${safeBaseName()}_audio.${ext}`);
+  }
 
-  for (const type of ['dragenter', 'dragover']) {
-    els.dropzone?.addEventListener(type, (event) => {
-      event.preventDefault();
-      if (!busy) els.dropzone.classList.add('dragging');
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function loadSheetJS() {
+    if (window.XLSX) return window.XLSX;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script'); s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'; s.onload = resolve; s.onerror = () => reject(new Error('Не удалось загрузить модуль Excel. Проверь интернет.')); document.head.appendChild(s);
     });
+    return window.XLSX;
   }
-  for (const type of ['dragleave', 'drop']) {
-    els.dropzone?.addEventListener(type, (event) => {
-      event.preventDefault();
-      els.dropzone.classList.remove('dragging');
+
+  async function downloadExcel() {
+    const text = els.transcript.value.trim(); if (!text) return showToast('Текста пока нет', 'error');
+    try {
+      const XLSX = await loadSheetJS();
+      const wb = XLSX.utils.book_new();
+      const meta = [
+        ['Speech Lab', BUILD.version], ['Сборка', `${BUILD.date} ${BUILD.time}`], ['Источник', state.selectedFile?.name || ''], ['Длительность', formatTime(state.currentDuration)], [''], ['Распознанный текст'], [text],
+      ];
+      const wsText = XLSX.utils.aoa_to_sheet(meta); wsText['!cols'] = [{ wch: 120 }];
+      XLSX.utils.book_append_sheet(wb, wsText, 'Текст');
+      const rows = [['№','Начало','Конец','Говорящий','Текст']];
+      state.lastSegments.forEach((s,i) => { const ts = s.timestamp || []; rows.push([i+1, formatTime(ts[0]), formatTime(ts[1]), s.speaker || '', s.text || '']); });
+      const wsSeg = XLSX.utils.aoa_to_sheet(rows); wsSeg['!cols'] = [{wch:6},{wch:12},{wch:12},{wch:20},{wch:100}];
+      XLSX.utils.book_append_sheet(wb, wsSeg, 'Сегменты'); XLSX.writeFile(wb, `${safeBaseName()}_transcript.xlsx`); showToast('Excel выгружен');
+    } catch (error) { showToast(error?.message || 'Не удалось создать Excel', 'error', 4200); }
+  }
+
+  function bindEvents() {
+    els.liveModeBtn.addEventListener('click', () => setMode('live'));
+    els.dictaphoneModeBtn.addEventListener('click', () => setMode('dictaphone'));
+    els.fileModeBtn.addEventListener('click', () => setMode('file'));
+    els.autoCaptureToggle.addEventListener('change', updateCaptureModeUI);
+    els.manualSourceSelect.addEventListener('change', updateCaptureModeUI);
+    els.speakerLabelsToggle.addEventListener('change', () => els.speakerConfig.classList.toggle('hidden', !els.speakerLabelsToggle.checked));
+    els.startCaptureBtn.addEventListener('click', startCapture); els.stopCaptureBtn.addEventListener('click', stopCapture);
+    els.retryTabCaptureBtn?.addEventListener('click', () => { els.autoCaptureToggle.checked = false; els.manualSourceSelect.value = 'browser'; updateCaptureModeUI(); startCapture(); });
+    els.testMicBtn?.addEventListener('click', testMicrophone);
+    els.startDictaphoneBtn.addEventListener('click', startDictaphone); els.stopDictaphoneBtn.addEventListener('click', stopDictaphone);
+    els.fileInput.addEventListener('change', (e) => selectFile(e.target.files?.[0])); els.removeFileBtn.addEventListener('click', clearFile);
+    els.transcribeBtn.addEventListener('click', startTranscription); els.copyBtn.addEventListener('click', copyTranscript); els.downloadBtn.addEventListener('click', downloadText);
+    els.downloadExcelBtn.addEventListener('click', downloadExcel); els.downloadAudioBtn.addEventListener('click', downloadAudio);
+    els.transcript.addEventListener('input', updateWordCount);
+    for (const t of ['dragenter','dragover']) els.dropzone.addEventListener(t, (e) => { e.preventDefault(); els.dropzone.classList.add('dragging'); });
+    for (const t of ['dragleave','drop']) els.dropzone.addEventListener(t, (e) => { e.preventDefault(); els.dropzone.classList.remove('dragging'); });
+    els.dropzone.addEventListener('drop', (e) => selectFile(e.dataTransfer?.files?.[0]));
+    els.audioPreview.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(els.audioPreview.duration)) { state.currentDuration = els.audioPreview.duration; els.fileMeta.textContent = `${formatBytes(state.selectedFile?.size || 0)} · ${formatTime(state.currentDuration)} · ${state.selectedFile?.type || 'медиафайл'}`; updateEngineHint(); }
     });
+    [els.modelSelect, els.qualitySelect, els.languageSelect, els.cleanupSelect].forEach((el) => el.addEventListener('change', updateEngineHint));
+    window.addEventListener('beforeunload', () => { stopMediaStream(state.displayStream); stopMediaStream(state.micStream); stopMediaStream(state.dictaphoneStream); });
   }
-  els.dropzone?.addEventListener('drop', (event) => {
-    if (busy) return;
-    const file = event.dataTransfer?.files?.[0];
-    if (file) selectFile(file, { label: 'ФАЙЛ' });
-  });
 
-  els.audioPreview?.addEventListener('loadedmetadata', () => {
-    if (Number.isFinite(els.audioPreview.duration)) {
-      currentDuration = els.audioPreview.duration;
-      if (els.fileMeta) els.fileMeta.textContent = `${formatBytes(selectedFile?.size || 0)} · ${formatTime(currentDuration)} · ${selectedFile?.type || 'медиафайл'}`;
-    }
-  });
-
-  els.transcribeBtn?.addEventListener('click', () => {
-    if (busy) cancelTranscription();
-    else transcribeSelectedFile();
-  });
-  els.copyBtn?.addEventListener('click', copyTranscript);
-  els.downloadExcelBtn?.addEventListener('click', downloadExcel);
-  els.downloadBtn?.addEventListener('click', downloadText);
-
-  els.qualitySelect?.addEventListener('change', updateEngineHint);
-  els.modelSelect?.addEventListener('change', updateEngineHint);
-
-  els.transcript?.addEventListener('input', () => {
-    const text = els.transcript.value.trim();
-    if (els.wordCount) els.wordCount.textContent = String(text ? text.split(/\s+/u).filter(Boolean).length : 0);
-  });
-
-  window.addEventListener('beforeunload', () => {
-    cleanupLiveSources();
-    dictaphoneStream?.getTracks().forEach((track) => track.stop());
-    worker?.terminate();
-  });
-}
-
-function init() {
-  setBuildInfo();
-  bindEvents();
-  switchMode('live');
-  updateCaptureModeUI();
-  updateEngineHint();
-  if (els.lastSourceText) {
-    const last = safeStorageGet('speechLabLastDisplaySurface');
-    els.lastSourceText.textContent = last ? sourceLabel(last) : 'ещё не выбран';
+  function init() {
+    els.appVersion.textContent = BUILD.version; els.appBuildTime.textContent = `${BUILD.date} · ${BUILD.time}`; els.footerBuild.textContent = `Версия ${BUILD.version} · сборка ${BUILD.date} ${BUILD.time}`;
+    const lastSurface = safeStorageGet('speechlab.lastSurface'); if (lastSurface) els.lastSourceText.textContent = displaySurfaceLabel(lastSurface);
+    setMode('live'); updateCaptureModeUI(); updateEngineHint(); bindEvents();
+    setCaptureStatus('idle', 'ГОТОВ К ЗАХВАТУ');
   }
-  if (els.speakerConfig && els.speakerLabelsToggle) {
-    els.speakerConfig.classList.toggle('hidden', !els.speakerLabelsToggle.checked);
-  }
-  console.info(`Speech Lab ${BUILD.version} ${BUILD.date} ${BUILD.time} loaded`);
-}
 
-init();
+  init();
+})();

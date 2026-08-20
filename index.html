@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://cdn.sheetjs.com" crossorigin />
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
-  <link rel="stylesheet" href="./styles.css?build=v1.3.1-20260820-1206" />
+  <link rel="stylesheet" href="./styles.css?build=v1.3.2-20260820-1718" />
 </head>
 <body>
   <main class="shell">
@@ -30,8 +30,8 @@
         <div class="badge">LOCAL AI</div>
         <div class="build-badge" id="buildBadge" aria-label="Версия приложения">
           <span>ВЕРСИЯ</span>
-          <strong id="appVersion">v1.3.1</strong>
-          <small id="appBuildTime">20.08.2026 · 12:06</small>
+          <strong id="appVersion">v1.3.2</strong>
+          <small id="appBuildTime">20.08.2026 · 17:18</small>
         </div>
       </div>
     </header>
@@ -181,6 +181,17 @@
             <div class="source-statuses">
               <div><span class="source-indicator" id="systemIndicator"></span><span id="systemStatus">Звук встречи: не подключён</span></div>
               <div><span class="source-indicator" id="micIndicator"></span><span id="micStatus">Микрофон: не подключён</span></div>
+            </div>
+          </div>
+
+          <div class="capture-diagnostic hidden" id="captureDiagnostic" role="alert">
+            <div>
+              <strong id="captureDiagnosticTitle">ПРОВЕРКА ИСТОЧНИКА</strong>
+              <p id="captureDiagnosticText">Проверь выбор вкладки и разрешение на аудио.</p>
+            </div>
+            <div class="capture-diagnostic-actions">
+              <button class="diagnostic-btn" id="retryTabCaptureBtn" type="button">ПОВТОРИТЬ: ВКЛАДКА СО ЗВУКОМ</button>
+              <button class="diagnostic-btn secondary" id="testMicBtn" type="button">ПРОВЕРИТЬ МИКРОФОН</button>
             </div>
           </div>
 
@@ -406,13 +417,13 @@
 
     <footer>
       <span>Локальная обработка аудио · без API-ключа · без загрузки записи</span>
-      <span id="footerBuild">Версия v1.3.1 · сборка 20.08.2026 12:06</span>
+      <span id="footerBuild">Версия v1.3.2 · сборка 20.08.2026 17:18</span>
       <span>Системные индикаторы браузера/ОС не скрываются и не обходятся</span>
     </footer>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script type="module" src="./app.js?build=v1.3.1-20260820-1206"></script>
+  <script defer src="./app.js?build=v1.3.2-20260820-1718"></script>
 </body>
 </html>
