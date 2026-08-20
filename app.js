@@ -1,7 +1,7 @@
 const BUILD = {
-  version: 'v1.1.0',
-  displayTime: '20.08.2026 · 07:49',
-  id: 'v1.1.0-20260820-0749',
+  version: 'v1.2.0',
+  displayTime: '20.08.2026 · 08:09',
+  id: 'v1.2.0-20260820-0809',
 };
 
 const els = Object.fromEntries([
@@ -223,8 +223,10 @@ async function decodeToMono16k(file) {
   source.connect(offline.destination);
   source.start(0);
   const rendered = await offline.startRendering();
-  const samples = new Float32Array(rendered.length);
-  samples.set(rendered.getChannelData(0));
+  source.disconnect();
+  // Не делаем ещё одну копию 16 kHz массива: на 20–60 минутных файлах
+  // это десятки/сотни мегабайт лишней памяти и заметный риск зависания вкладки.
+  const samples = rendered.getChannelData(0);
   return samples;
 }
 
@@ -238,35 +240,59 @@ function resolveProfile() {
   const requestedModel = els.modelSelect?.value || 'auto';
   const gpu = hasWebGPU();
 
-  let mode = requestedQuality;
-  if (mode === 'auto') mode = duration >= 5 * 60 ? 'fast' : 'balanced';
-  if (mode === 'accurate') mode = 'balanced';
+  // v1.2: AUTO больше не ухудшает длинные чистые записи до Tiny.
+  // Баланс — основной режим для обычных разговоров любой разумной длины.
+  let mode = requestedQuality === 'auto' ? 'balanced' : requestedQuality;
+  if (!['fast', 'balanced', 'accurate', 'noisy'].includes(mode)) mode = 'balanced';
 
   let modelId = requestedModel;
   if (modelId === 'auto') {
-    if (mode === 'fast') modelId = 'onnx-community/whisper-tiny';
-    else if (mode === 'noisy') modelId = gpu && duration < 12 * 60 ? 'onnx-community/whisper-base' : 'onnx-community/whisper-tiny';
-    else modelId = gpu ? 'onnx-community/whisper-base' : 'onnx-community/whisper-tiny';
+    modelId = mode === 'fast'
+      ? 'onnx-community/whisper-tiny'
+      : 'onnx-community/whisper-base';
   }
 
-  // Защита от случайного запуска очень тяжёлой модели на длинной записи без GPU.
+  // Если пользователь сам выбрал Small — не подменяем модель молча.
+  // Только предупреждаем: на CPU длинная запись действительно может идти долго.
   if (!gpu && duration >= 8 * 60 && modelId.includes('whisper-small')) {
-    modelId = 'onnx-community/whisper-tiny';
-    showToast('Для длинной записи Small заменён на Tiny, чтобы сайт не зависал');
+    showToast('Whisper Small на CPU будет заметно медленнее Base');
   }
 
-  const profile = {
+  const profiles = {
+    fast: {
+      chunkSeconds: 29,
+      overlapSeconds: 0,
+      returnTimestamps: false,
+      useVad: true,
+    },
+    balanced: {
+      chunkSeconds: 28,
+      overlapSeconds: 1.5,
+      returnTimestamps: false,
+      useVad: true,
+    },
+    accurate: {
+      chunkSeconds: 25,
+      overlapSeconds: 2.0,
+      returnTimestamps: true,
+      useVad: true,
+    },
+    noisy: {
+      chunkSeconds: 18,
+      overlapSeconds: 1.0,
+      returnTimestamps: true,
+      useVad: true,
+    },
+  };
+
+  return {
     mode,
     modelId,
     preferredDevice: gpu ? 'webgpu' : 'wasm',
     language: els.languageSelect?.value || 'russian',
     cleanup: els.cleanupSelect?.value || 'strict',
-    chunkSeconds: mode === 'noisy' ? 18 : mode === 'balanced' ? 26 : 29,
-    overlapSeconds: mode === 'noisy' ? 0.7 : mode === 'balanced' ? 0.3 : 0,
-    returnTimestamps: mode !== 'fast',
-    useVad: mode !== 'balanced' || duration >= 3 * 60,
+    ...profiles[mode],
   };
-  return profile;
 }
 
 function ensureWorker() {
@@ -302,7 +328,7 @@ function handleWorkerMessage(event) {
   if (msg.type === 'engine') {
     const modelName = msg.modelId?.includes('tiny') ? 'Whisper Tiny' : msg.modelId?.includes('base') ? 'Whisper Base' : 'Whisper';
     const deviceName = msg.device === 'webgpu' ? 'WebGPU' : 'WASM/CPU';
-    if (els.engineHint) els.engineHint.textContent = `${state.activeProfile?.mode === 'fast' ? 'FAST' : 'AI'} · ${modelName} · ${deviceName} · фоновый Worker`;
+    if (els.engineHint) els.engineHint.textContent = `${({ fast: 'БЫСТРО', balanced: 'БАЛАНС', accurate: 'ТОЧНО', noisy: 'ШУМ' })[state.activeProfile?.mode] || 'AI'} · ${modelName} · ${deviceName} · фоновый Worker`;
     setProgress(29, 'Модель готова', `${modelName} · ${deviceName}. Начинаю распознавание.`);
     return;
   }
@@ -317,6 +343,11 @@ function handleWorkerMessage(event) {
     const speed = Number.isFinite(msg.realtimeFactor) ? ` · ${msg.realtimeFactor.toFixed(2)}× от длительности` : '';
     const skipped = msg.skipped ? ` · пропущено тишины: ${msg.skipped}` : '';
     setProgress(percent, `Распознаю: ${msg.index} из ${msg.total}`, `${eta}${speed}${skipped}`.replace(/^ · /, ''));
+    return;
+  }
+  if (msg.type === 'partial') {
+    // Показываем уже распознанный текст во время обработки, не дожидаясь конца файла.
+    renderResult({ text: msg.text || '', chunks: msg.chunks || [] });
     return;
   }
   if (msg.type === 'result') {
@@ -364,8 +395,8 @@ async function startTranscription() {
 
     const modelName = profile.modelId.includes('tiny') ? 'Tiny' : profile.modelId.includes('base') ? 'Base' : 'Small';
     const device = profile.preferredDevice === 'webgpu' ? 'WebGPU' : 'CPU/WASM';
-    if (els.engineHint) els.engineHint.textContent = `${profile.mode === 'fast' ? 'FAST' : profile.mode.toUpperCase()} · Whisper ${modelName} · ${device} · Worker`;
-    setProgress(9, 'Передаю аудио в Worker', `${formatTime(state.currentDuration)} · ${modelName} · ${profile.mode === 'fast' ? 'быстрые таймкоды по блокам' : 'точные таймкоды'}`);
+    if (els.engineHint) els.engineHint.textContent = `${({ fast: 'БЫСТРО', balanced: 'БАЛАНС', accurate: 'ТОЧНО', noisy: 'ШУМ' })[profile.mode] || profile.mode.toUpperCase()} · Whisper ${modelName} · ${device} · Worker`;
+    setProgress(9, 'Передаю аудио в Worker', `${formatTime(state.currentDuration)} · ${modelName} · ${profile.returnTimestamps ? 'точные таймкоды' : `таймкоды по блокам · перекрытие ${profile.overlapSeconds} сек`}`);
 
     const worker = ensureWorker();
     worker.postMessage({
@@ -664,7 +695,7 @@ function init() {
   if (els.footerBuild) els.footerBuild.textContent = `Версия ${BUILD.version} · сборка ${BUILD.displayTime.replace(' · ', ' ')}`;
 
   // Новый безопасный дефолт: чистая длинная запись автоматически идёт в FAST.
-  if (els.qualitySelect && !['auto', 'fast', 'accurate', 'noisy'].includes(els.qualitySelect.value)) els.qualitySelect.value = 'auto';
+  if (els.qualitySelect && !['auto', 'fast', 'balanced', 'accurate', 'noisy'].includes(els.qualitySelect.value)) els.qualitySelect.value = 'auto';
   updateCaptureModeUI();
   const last = localStorage.getItem('speechlab-last-source');
   if (last && els.lastSourceText) els.lastSourceText.textContent = last === 'browser' ? 'вкладка браузера' : last === 'window' ? 'окно приложения' : 'экран';

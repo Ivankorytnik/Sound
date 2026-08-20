@@ -54,11 +54,26 @@ function cleanupText(text, level) {
   return out;
 }
 
+function canonicalToken(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/gu, 'е')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function wordTokens(text) {
+  return normalizeText(text).split(/\s+/u).filter(Boolean);
+}
+
 function overlapWords(previous, current) {
-  const a = normalizeText(previous).toLowerCase().split(/\s+/u).filter(Boolean);
-  const b = normalizeText(current).toLowerCase().split(/\s+/u).filter(Boolean);
-  for (let n = Math.min(8, a.length, b.length); n >= 2; n -= 1) {
-    if (a.slice(-n).join(' ') === b.slice(0, n).join(' ')) return n;
+  const rawA = wordTokens(previous);
+  const rawB = wordTokens(current);
+  const a = rawA.map(canonicalToken);
+  const b = rawB.map(canonicalToken);
+  for (let n = Math.min(16, a.length, b.length); n >= 2; n -= 1) {
+    const left = a.slice(-n);
+    const right = b.slice(0, n);
+    if (left.every((token, i) => token && token === right[i])) return n;
   }
   return 0;
 }
@@ -66,7 +81,19 @@ function overlapWords(previous, current) {
 function trimOverlap(previous, current) {
   const n = overlapWords(previous, current);
   if (!n) return normalizeText(current);
-  return normalizeText(current).split(/\s+/u).slice(n).join(' ').trim();
+  return wordTokens(current).slice(n).join(' ').trim();
+}
+
+function nearDuplicate(aText, bText) {
+  const a = wordTokens(aText).map(canonicalToken).filter(Boolean);
+  const b = wordTokens(bText).map(canonicalToken).filter(Boolean);
+  if (a.length < 8 || b.length < 8) return false;
+  const ratio = Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  if (ratio < 0.8) return false;
+  const limit = Math.min(a.length, b.length);
+  let samePosition = 0;
+  for (let i = 0; i < limit; i += 1) if (a[i] === b[i]) samePosition += 1;
+  return samePosition / limit > 0.86;
 }
 
 async function disposePipeline() {
@@ -102,6 +129,7 @@ async function getPipeline(modelId, preferredDevice, jobId) {
       };
       // Для WebGPU q4-декодер заметно уменьшает размер/нагрузку. На WASM оставляем стабильный дефолт q8.
       if (device === 'webgpu') options.dtype = { encoder_model: 'fp32', decoder_model_merged: 'q4' };
+      else options.dtype = 'q8';
 
       activePipeline = await pipeline('automatic-speech-recognition', modelId, options);
       activeKey = key;
@@ -142,6 +170,7 @@ async function transcribeJob(message) {
     overlapSeconds = 0,
     returnTimestamps = false,
     useVad = true,
+    mode = 'balanced',
   } = message;
 
   cancelled.delete(jobId);
@@ -151,7 +180,7 @@ async function transcribeJob(message) {
   const { transcriber, device } = await getPipeline(modelId, preferredDevice, jobId);
 
   const chunkSamples = Math.max(sampleRate * 8, Math.floor(chunkSeconds * sampleRate));
-  const overlapSamples = Math.max(0, Math.floor(Math.min(overlapSeconds, 1.2) * sampleRate));
+  const overlapSamples = Math.max(0, Math.floor(Math.min(overlapSeconds, 2.5) * sampleRate));
   const stepSamples = Math.max(sampleRate, chunkSamples - overlapSamples);
   const totalChunks = Math.max(1, Math.ceil(Math.max(1, audio.length - overlapSamples) / stepSamples));
   const vadThreshold = 0.0025;
@@ -159,6 +188,7 @@ async function transcribeJob(message) {
   const texts = [];
   const segments = [];
   let previousTail = '';
+  let previousChunkText = '';
   let skipped = 0;
   let processed = 0;
   const startedAt = performance.now();
@@ -181,14 +211,25 @@ async function transcribeJob(message) {
       const options = {
         task: 'transcribe',
         return_timestamps: returnTimestamps,
-        no_repeat_ngram_size: 3,
-        repetition_penalty: 1.05,
+        do_sample: false,
+        num_beams: 1,
+        temperature: 0,
       };
+      // На чистой записи не запрещаем естественные повторы во время декодирования:
+      // слишком жёсткий no-repeat может заставить модель выбирать неверные слова.
+      if (mode === 'noisy') {
+        options.no_repeat_ngram_size = 4;
+        options.repetition_penalty = 1.03;
+      }
       if (language && language !== 'auto') options.language = language;
 
       const output = await transcriber(slice, options);
       let text = cleanupText(output?.text, cleanup);
       text = trimOverlap(previousTail, text);
+
+      // Если соседний перекрывающийся кусок почти полностью повторил предыдущий,
+      // не добавляем дубликат в итоговую стенограмму.
+      if (text && nearDuplicate(previousChunkText, text)) text = '';
 
       if (text && text !== '[неразборчивая речь / повтор]') {
         const offset = start / sampleRate;
@@ -196,11 +237,23 @@ async function transcribeJob(message) {
         if (chunkSegments.length && previousTail) chunkSegments[0].text = trimOverlap(previousTail, chunkSegments[0].text);
         for (const item of chunkSegments) if (item.text) segments.push(item);
         texts.push(text);
-        previousTail = `${previousTail} ${text}`.trim().split(/\s+/u).slice(-20).join(' ');
+        previousChunkText = text;
+        previousTail = `${previousTail} ${text}`.trim().split(/\s+/u).slice(-32).join(' ');
       } else if (text) {
         segments.push({ text, timestamp: [start / sampleRate, end / sampleRate] });
       }
       processed += 1;
+
+      // Пользователь сразу видит уже готовую часть текста — длинная запись не выглядит зависшей.
+      if (texts.length) {
+        post('partial', {
+          jobId,
+          text: normalizeText(texts.join(' ')),
+          chunks: segments,
+          index: processed,
+          total: totalChunks,
+        });
+      }
     }
 
     const elapsed = (performance.now() - startedAt) / 1000;
