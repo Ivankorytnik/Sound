@@ -11,8 +11,9 @@
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="manifest" href="./site.webmanifest" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://cdn.sheetjs.com" crossorigin />
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?build=v1.0.0-20260820-0731" />
 </head>
 <body>
   <main class="shell">
@@ -21,7 +22,14 @@
         <div class="eyebrow">MVP / SPEECH TO TEXT</div>
         <h1>РАСПОЗНАВАНИЕ<br><span>РЕЧИ</span></h1>
       </div>
-      <div class="badge">LOCAL AI</div>
+      <div class="topbar-meta">
+        <div class="badge">LOCAL AI</div>
+        <div class="build-badge" id="buildBadge" aria-label="Версия приложения">
+          <span>ВЕРСИЯ</span>
+          <strong id="appVersion">v1.0.0</strong>
+          <small id="appBuildTime">20.08.2026 · 07:31</small>
+        </div>
+      </div>
     </header>
 
     <section class="grid">
@@ -33,6 +41,7 @@
 
         <div class="mode-tabs" role="tablist" aria-label="Режим распознавания">
           <button class="mode-tab active" id="liveModeBtn" type="button" data-mode="live" role="tab" aria-selected="true">ЖИВОЙ РАЗГОВОР</button>
+          <button class="mode-tab" id="dictaphoneModeBtn" type="button" data-mode="dictaphone" role="tab" aria-selected="false">ДИКТОФОН</button>
           <button class="mode-tab" id="fileModeBtn" type="button" data-mode="file" role="tab" aria-selected="false">ИЗ ФАЙЛА</button>
         </div>
 
@@ -188,6 +197,73 @@
           </div>
         </section>
 
+
+        <section class="mode-section hidden" id="dictaphoneMode">
+          <div class="live-hero dictaphone-hero">
+            <div class="live-kicker"><span class="live-dot"></span> МИКРОФОН · ЛОКАЛЬНАЯ ЗАПИСЬ</div>
+            <h3>ДИКТОФОН<br>С РАСПОЗНАВАНИЕМ</h3>
+            <p>Записывает речь с микрофона в браузере. После остановки запись можно прослушать, скачать и сразу перевести в текст.</p>
+          </div>
+
+          <div class="privacy-card">
+            <div class="privacy-icon">MIC</div>
+            <div>
+              <strong>ЗАПИСЬ ТОЛЬКО С МИКРОФОНА</strong>
+              <p>Аудио хранится локально в памяти страницы. Оно не отправляется на сервер Speech Lab.</p>
+              <div class="privacy-points">
+                <span>● ЛОКАЛЬНО</span>
+                <span>● БЕЗ API-КЛЮЧА</span>
+                <span>● АВТОРАСПОЗНАВАНИЕ</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="capture-options">
+            <label class="switch-row">
+              <span>
+                <strong>РАСПОЗНАТЬ ПОСЛЕ СТОПА</strong>
+                <small>После завершения диктофона автоматически запустить Whisper</small>
+              </span>
+              <input id="dictaphoneAutoTranscribeToggle" type="checkbox" checked />
+              <i></i>
+            </label>
+          </div>
+
+          <div class="capture-status idle" id="dictaphoneStatus">
+            <div class="capture-status-main">
+              <div>
+                <span class="capture-label">ДИКТОФОН</span>
+                <strong id="dictaphoneStatusText">ГОТОВ К ЗАПИСИ</strong>
+              </div>
+              <div class="record-timer" id="dictaphoneTimer">00:00</div>
+            </div>
+            <div class="source-statuses">
+              <div><span class="source-indicator" id="dictaphoneMicIndicator"></span><span id="dictaphoneMicStatus">Микрофон: не подключён</span></div>
+            </div>
+          </div>
+
+          <div class="capture-actions">
+            <button class="primary-btn" id="startDictaphoneBtn" type="button">
+              <span>НАЧАТЬ ЗАПИСЬ</span>
+              <span class="arrow">●</span>
+            </button>
+            <button class="danger-btn hidden" id="stopDictaphoneBtn" type="button">
+              <span>ОСТАНОВИТЬ</span>
+              <span>■</span>
+            </button>
+          </div>
+
+          <div class="capture-help">
+            <strong>КАК ИСПОЛЬЗОВАТЬ</strong>
+            <ol>
+              <li>Разреши браузеру доступ к микрофону.</li>
+              <li>Нажми «Начать запись» и говори.</li>
+              <li>Нажми «Остановить».</li>
+              <li>При включённом авто-режиме Whisper сразу создаст текст.</li>
+            </ol>
+          </div>
+        </section>
+
         <section class="mode-section hidden" id="fileMode">
           <label class="dropzone" id="dropzone" for="fileInput">
             <input
@@ -212,7 +288,7 @@
         </div>
 
         <audio id="audioPreview" class="audio-preview hidden" controls></audio>
-        <button class="secondary-btn recording-download hidden" id="downloadAudioBtn" type="button">СКАЧАТЬ ЗАПИСЬ РАЗГОВОРА</button>
+        <button class="secondary-btn recording-download hidden" id="downloadAudioBtn" type="button">СКАЧАТЬ АУДИОЗАПИСЬ</button>
 
         <div class="settings">
           <label>
@@ -227,18 +303,19 @@
           <label>
             <span>МОДЕЛЬ</span>
             <select id="modelSelect">
-              <option value="Xenova/whisper-tiny">Whisper Tiny · быстро</option>
-              <option value="Xenova/whisper-base">Whisper Base · точнее</option>
-              <option value="Xenova/whisper-small" selected>Whisper Small · максимум точности</option>
+              <option value="auto" selected>Авто · баланс скорости и точности</option>
+              <option value="onnx-community/whisper-tiny">Whisper Tiny · самый быстрый</option>
+              <option value="onnx-community/whisper-base">Whisper Base · точнее</option>
+              <option value="onnx-community/whisper-small">Whisper Small · тяжёлый режим</option>
             </select>
           </label>
 
           <label>
             <span>КАЧЕСТВО ЗАПИСИ</span>
             <select id="qualitySelect">
-              <option value="noisy" selected>Старая / шумная · максимум точности</option>
-              <option value="accurate">Обычная запись · точно</option>
-              <option value="fast">Быстро · без VAD</option>
+              <option value="accurate" selected>Авто / обычная · баланс</option>
+              <option value="noisy">Старая / шумная · точнее, медленнее</option>
+              <option value="fast">Быстро · минимум обработки</option>
             </select>
           </label>
 
@@ -251,6 +328,8 @@
             </select>
           </label>
         </div>
+
+        <div class="engine-hint" id="engineHint">AI работает в отдельном Worker.</div>
 
         <button class="primary-btn" id="transcribeBtn" type="button" disabled>
           <span id="transcribeBtnText">РАСПОЗНАТЬ РЕЧЬ</span>
@@ -290,7 +369,8 @@
           <textarea id="transcript" spellcheck="true" aria-label="Распознанный текст"></textarea>
 
           <div class="result-actions">
-            <button class="secondary-btn" id="copyBtn" type="button">КОПИРОВАТЬ</button>
+            <button class="secondary-btn result-copy-btn" id="copyBtn" type="button">СКОПИРОВАТЬ ТЕКСТ</button>
+            <button class="secondary-btn" id="downloadExcelBtn" type="button">ВЫГРУЗИТЬ В EXCEL</button>
             <button class="secondary-btn" id="downloadBtn" type="button">СКАЧАТЬ .TXT</button>
           </div>
 
@@ -304,12 +384,13 @@
 
     <footer>
       <span>Локальная обработка аудио · без API-ключа · без загрузки записи</span>
+      <span id="footerBuild">Версия v1.0.0 · сборка 20.08.2026 07:31</span>
       <span>Системные индикаторы браузера/ОС не скрываются и не обходятся</span>
     </footer>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?build=v1.0.0-20260820-0731"></script>
 </body>
 </html>
