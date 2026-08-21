@@ -2,10 +2,10 @@
   'use strict';
 
   const BUILD = {
-    version: 'v1.5.0',
+    version: 'v1.5.1',
     date: '21.08.2026',
-    time: '06:50',
-    key: 'v1.5.0-20260821-0650',
+    time: '07:08',
+    key: 'v1.5.1-20260821-0708',
   };
 
   const $ = (selector) => document.querySelector(selector);
