@@ -2,10 +2,10 @@
   'use strict';
 
   const BUILD = {
-    version: 'v1.4.0',
-    date: '20.08.2026',
-    time: '17:52',
-    key: 'v1.4.0-20260820-1752',
+    version: 'v1.5.0',
+    date: '21.08.2026',
+    time: '06:50',
+    key: 'v1.5.0-20260821-0650',
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -454,10 +454,11 @@
     let q = els.qualitySelect.value;
     if (q === 'auto') q = 'balanced';
     const profiles = {
-      fast: { quality: 'fast', model: 'onnx-community/whisper-tiny', chunk: 29, overlap: 0, vad: true, detailedTimestamps: false },
-      balanced: { quality: 'balanced', model: 'onnx-community/whisper-base', chunk: 28, overlap: 1.5, vad: true, detailedTimestamps: false },
-      accurate: { quality: 'accurate', model: 'onnx-community/whisper-base', chunk: 25, overlap: 2, vad: true, detailedTimestamps: true },
-      noisy: { quality: 'noisy', model: 'onnx-community/whisper-base', chunk: 18, overlap: 2, vad: true, detailedTimestamps: true },
+      fast: { quality: 'fast', model: 'auto', chunk: 29, overlap: 0, vad: true, detailedTimestamps: false },
+      balanced: { quality: 'balanced', model: 'auto', chunk: 28, overlap: 3, vad: true, detailedTimestamps: false },
+      accurate: { quality: 'accurate', model: 'auto', chunk: 27, overlap: 4, vad: true, detailedTimestamps: true },
+      max: { quality: 'max', model: 'auto', chunk: 26, overlap: 5, vad: true, detailedTimestamps: true },
+      noisy: { quality: 'noisy', model: 'auto', chunk: 20, overlap: 4, vad: true, detailedTimestamps: true },
     };
     const p = { ...profiles[q] };
     if (els.modelSelect.value !== 'auto') p.model = els.modelSelect.value;
@@ -466,9 +467,22 @@
   }
 
   function updateEngineHint() {
-    const p = getProfile(); const label = p.quality.toUpperCase();
-    const modelName = p.model.includes('tiny') ? 'Whisper Tiny' : p.model.includes('small') ? 'Whisper Small' : 'Whisper Base';
-    els.engineHint.textContent = `${label} · ${modelName} · блок ${p.chunk} сек${p.overlap ? ` + перекрытие ${p.overlap} сек` : ''}. AI запускается в отдельном Worker; интерфейс остаётся отзывчивым.`;
+    const p = getProfile();
+    const hasGpu = !!navigator.gpu;
+    let modelName;
+    if (p.model !== 'auto') {
+      modelName = p.model.includes('large-v3-turbo') ? 'Whisper Large-v3-Turbo' : p.model.includes('small') ? 'Whisper Small' : p.model.includes('tiny') ? 'Whisper Tiny' : 'Whisper Base';
+    } else if (p.quality === 'fast') {
+      modelName = 'Whisper Tiny';
+    } else if (p.quality === 'accurate' || p.quality === 'max') {
+      modelName = hasGpu ? 'Whisper Large-v3-Turbo' : 'Whisper Small / Base fallback';
+    } else if (p.quality === 'balanced' || p.quality === 'noisy') {
+      modelName = hasGpu ? 'Whisper Small' : 'Whisper Base';
+    } else {
+      modelName = 'Whisper Auto';
+    }
+    const extra = p.quality === 'max' ? ' + повторная проверка сомнительных фрагментов' : p.quality === 'accurate' ? ' + beam search и точные таймкоды' : '';
+    els.engineHint.textContent = `${p.quality.toUpperCase()} · ${modelName} · блок ${p.chunk} сек${p.overlap ? ` + перекрытие ${p.overlap} сек` : ''}${extra}. AI работает в отдельном Worker.`;
   }
 
   async function decodeToMono16k(file) {
@@ -502,7 +516,7 @@
     try {
       const audio = await decodeToMono16k(state.selectedFile);
       const profile = getProfile();
-      setProgress(8, 'АУДИО ГОТОВО', `${formatTime(state.currentDuration)} · ${profile.quality.toUpperCase()} · ${profile.model.split('/').pop()}`);
+      setProgress(8, 'АУДИО ГОТОВО', `${formatTime(state.currentDuration)} · ${profile.quality.toUpperCase()} · ${profile.model === 'auto' ? 'умный выбор модели' : profile.model.split('/').pop()}`);
       const worker = createWorker(); state.transcriptionWorker = worker; state.transcriptionJobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const jobId = state.transcriptionJobId;
       let lastPartial = '';
@@ -520,13 +534,16 @@
           const p = 28 + ratio * 69;
           const elapsed = (performance.now() - state.transcriptionStartedAt) / 1000;
           const eta = ratio > 0.03 ? Math.max(0, (elapsed / ratio) - elapsed) : null;
-          setProgress(p, `РАСПОЗНАЮ · ${msg.index}/${msg.total}`, `${msg.skipped ? `Пропущено тишины: ${msg.skipped}. ` : ''}${Number.isFinite(eta) ? `Осталось ~${formatTime(eta)}.` : 'Считаю скорость…'}`);
+          setProgress(p, `РАСПОЗНАЮ · ${msg.index}/${msg.total}`, `${msg.skipped ? `Пропущено тишины: ${msg.skipped}. ` : ''}${msg.retried ? `Перепроверено: ${msg.retried}. ` : ''}${Number.isFinite(eta) ? `Осталось ~${formatTime(eta)}.` : 'Считаю скорость…'}`);
           if (msg.partialText) {
             lastPartial = `${lastPartial} ${msg.partialText}`.replace(/\s+/g, ' ').trim();
             renderLiveText(lastPartial);
           }
+        } else if (msg.type === 'quality-check') {
+          const current = Number.isFinite(msg.index) ? `${msg.index}/${msg.total || '?'}` : '';
+          els.statusNote.textContent = `${msg.message || 'Перепроверяю фрагмент…'} ${current}`.trim();
         } else if (msg.type === 'backend-fallback') {
-          showToast('WebGPU недоступен — использую CPU/WASM', 'error', 3500);
+          showToast('Переключаюсь на совместимый движок/модель', 'error', 3500);
         } else if (msg.type === 'result') {
           renderResult(msg.output); setProgress(100, 'ГОТОВО', 'Текст можно редактировать, копировать и выгружать в Excel.');
           finishTranscriptionWorker(); showToast('Распознавание завершено');

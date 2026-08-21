@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://cdn.sheetjs.com" crossorigin />
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
-  <link rel="stylesheet" href="./styles.css?build=v1.4.0-20260820-1752" />
+  <link rel="stylesheet" href="./styles.css?build=v1.5.0-20260821-0650" />
 </head>
 <body>
   <main class="shell">
@@ -30,8 +30,8 @@
         <div class="badge">LOCAL AI</div>
         <div class="build-badge" id="buildBadge" aria-label="Версия приложения">
           <span>ВЕРСИЯ</span>
-          <strong id="appVersion">v1.4.0</strong>
-          <small id="appBuildTime">20.08.2026 · 17:52</small>
+          <strong id="appVersion">v1.5.0</strong>
+          <small id="appBuildTime">21.08.2026 · 06:50</small>
         </div>
       </div>
     </header>
@@ -334,21 +334,23 @@
           <label>
             <span>МОДЕЛЬ</span>
             <select id="modelSelect">
-              <option value="auto" selected>Авто · модель по режиму качества</option>
+              <option value="auto" selected>Авто · лучшая модель под компьютер</option>
+              <option value="onnx-community/whisper-large-v3-turbo">Whisper Large-v3-Turbo · максимум качества / WebGPU</option>
+              <option value="onnx-community/whisper-small">Whisper Small · высокое качество</option>
+              <option value="onnx-community/whisper-base">Whisper Base · баланс на CPU</option>
               <option value="onnx-community/whisper-tiny">Whisper Tiny · только скорость</option>
-              <option value="onnx-community/whisper-base">Whisper Base · рекомендуется</option>
-              <option value="onnx-community/whisper-small">Whisper Small · вручную / очень тяжёлый</option>
             </select>
           </label>
 
           <label>
             <span>КАЧЕСТВО ЗАПИСИ</span>
             <select id="qualitySelect">
-              <option value="auto" selected>Авто · БАЛАНС / Base · рекомендуется</option>
-              <option value="fast">БЫСТРО · Tiny · максимум скорости</option>
-              <option value="balanced">БАЛАНС · Base · чистая речь</option>
-              <option value="accurate">ТОЧНО · Base + точные таймкоды</option>
+              <option value="auto" selected>Авто · БАЛАНС · рекомендуется</option>
+              <option value="balanced">БАЛАНС · Small на GPU / Base на CPU</option>
+              <option value="accurate">ТОЧНО · Large-v3-Turbo на GPU</option>
+              <option value="max">МАКСИМУМ · Turbo + повторная проверка</option>
               <option value="noisy">ШУМ · старая / плохая запись</option>
+              <option value="fast">БЫСТРО · Tiny · только черновик</option>
             </select>
           </label>
 
@@ -362,7 +364,7 @@
           </label>
         </div>
 
-        <div class="engine-hint" id="engineHint">БАЛАНС · обычная русская речь распознаётся через Whisper Base в отдельном Worker. Tiny используется только в режиме БЫСТРО.</div>
+        <div class="engine-hint" id="engineHint">АВТО · на WebGPU используется Whisper Small, а режимы ТОЧНО/МАКСИМУМ переключаются на Large-v3-Turbo. На CPU используется безопасный Base fallback.</div>
 
         <button class="primary-btn" id="transcribeBtn" type="button" disabled>
           <span id="transcribeBtnText">РАСПОЗНАТЬ РЕЧЬ</span>
@@ -417,13 +419,13 @@
 
     <footer>
       <span>Локальная обработка аудио · без API-ключа · без загрузки записи</span>
-      <span id="footerBuild">Версия v1.4.0 · сборка 20.08.2026 17:52</span>
+      <span id="footerBuild">Версия v1.5.0 · сборка 21.08.2026 06:50</span>
       <span>Системные индикаторы браузера/ОС не скрываются и не обходятся</span>
     </footer>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script defer src="./app.js?build=v1.4.0-20260820-1752"></script>
+  <script defer src="./app.js?build=v1.5.0-20260821-0650"></script>
 </body>
 </html>
