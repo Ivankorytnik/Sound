@@ -2,11 +2,14 @@
   'use strict';
 
   const BUILD = {
-    version: 'v1.5.1',
-    date: '21.08.2026',
-    time: '07:08',
-    key: 'v1.5.1-20260821-0708',
+    version: 'v1.6.0',
+    date: '03.09.2026',
+    time: '12:00',
+    key: 'v1.6.0-20260903-1200',
   };
+
+  const MAX_FILE_SIZE = 300 * 1024 * 1024;
+  const MAX_DURATION_SECONDS = 90 * 60;
 
   const $ = (selector) => document.querySelector(selector);
   const els = {
@@ -119,7 +122,7 @@
     els.captureModeBadge.textContent = auto ? 'AUTO' : 'MANUAL';
     els.manualSourceWrap?.classList.toggle('hidden', auto);
     els.captureModeHint.textContent = auto
-      ? 'АВТО: открою системный выбор с последним удачным типом источника. После подтверждения запись стартует сама.'
+      ? 'РЕКОМЕНДУЕМЫЙ: открою системный выбор с последним удачным типом источника. Источник всегда подтверждается вручную в окне браузера.'
       : 'РУЧНОЙ: выбери, какую вкладку системного окна браузера показать первой.';
     els.startCaptureBtnText.textContent = auto ? 'НАЙТИ И НАЧАТЬ' : 'ВЫБРАТЬ И НАЧАТЬ';
   }
@@ -407,8 +410,15 @@
     return file.type.startsWith('audio/') || file.type.startsWith('video/') || /\.(mp3|wav|m4a|aac|ogg|webm|mp4|mpeg|mpga)$/i.test(file.name || '');
   }
 
+  function validateSelectedFile(file, duration = null) {
+    if (file?.size > MAX_FILE_SIZE) throw new Error('Файл больше 300 МБ. Раздели запись на части перед распознаванием.');
+    if (Number.isFinite(duration) && duration > MAX_DURATION_SECONDS) throw new Error('Запись длиннее 90 минут. Раздели её на части, чтобы вкладка не исчерпала память.');
+  }
+
   function selectFile(file, options = {}) {
     if (!looksLikeMedia(file)) return showToast('Нужен аудио- или видеофайл', 'error');
+    try { validateSelectedFile(file, options.duration); }
+    catch (error) { return showToast(error.message, 'error', 5200); }
     state.selectedFile = file; state.recordedBlob = file; resetResult();
     els.fileLabel.textContent = options.label || 'ФАЙЛ';
     els.fileName.textContent = file.name || 'audio';
@@ -492,6 +502,7 @@
     try {
       const buffer = await file.arrayBuffer();
       const decoded = await ctx.decodeAudioData(buffer.slice(0));
+      validateSelectedFile(file, decoded.duration);
       state.currentDuration = decoded.duration;
       const targetRate = 16000;
       const length = Math.max(1, Math.ceil(decoded.duration * targetRate));
@@ -508,6 +519,18 @@
     return new Worker(`./transcription-worker.js?build=${BUILD.key}`, { type: 'module' });
   }
 
+  let webGpuAvailablePromise;
+  function detectWebGPU() {
+    if (!webGpuAvailablePromise) {
+      webGpuAvailablePromise = (async () => {
+        if (!navigator.gpu?.requestAdapter) return false;
+        try { return !!(await navigator.gpu.requestAdapter()); }
+        catch { return false; }
+      })();
+    }
+    return webGpuAvailablePromise;
+  }
+
   async function startTranscription() {
     if (state.transcriptionBusy) { cancelTranscription(); return; }
     if (!state.selectedFile) return;
@@ -517,6 +540,7 @@
       const audio = await decodeToMono16k(state.selectedFile);
       const profile = getProfile();
       setProgress(8, 'АУДИО ГОТОВО', `${formatTime(state.currentDuration)} · ${profile.quality.toUpperCase()} · ${profile.model === 'auto' ? 'умный выбор модели' : profile.model.split('/').pop()}`);
+      const hasWebGPU = await detectWebGPU();
       const worker = createWorker(); state.transcriptionWorker = worker; state.transcriptionJobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const jobId = state.transcriptionJobId;
       let lastPartial = '';
@@ -557,7 +581,7 @@
       const transferable = audio.buffer;
       worker.postMessage({
         type: 'transcribe', jobId, audioBuffer: transferable, modelId: profile.model,
-        preferredDevice: navigator.gpu ? 'webgpu' : 'wasm', language: els.languageSelect.value,
+        preferredDevice: hasWebGPU ? 'webgpu' : 'wasm', language: els.languageSelect.value,
         chunkSeconds: profile.chunk, overlapSeconds: profile.overlap, useVad: profile.vad,
         vadThreshold: profile.quality === 'noisy' ? 0.0055 : 0.0035,
         detailedTimestamps: profile.detailedTimestamps, cleanup: profile.cleanup, quality: profile.quality,
@@ -590,12 +614,32 @@
     const text = String(output?.text || '').trim(); const chunks = Array.isArray(output?.chunks) ? output.chunks : [];
     state.lastSegments = chunks; els.transcript.value = text; updateWordCount(); els.segmentCount.textContent = String(chunks.length); els.audioDuration.textContent = formatTime(state.currentDuration);
     els.segmentsList.innerHTML = '';
-    for (const chunk of chunks) {
+    const speakerNames = [els.mySpeakerName, els.speakerName1, els.speakerName2, els.speakerName3]
+      .map((input) => input?.value?.trim()).filter(Boolean);
+    for (const [index, chunk] of chunks.entries()) {
       const row = document.createElement('div'); row.className = 'segment';
       const t = document.createElement('div'); t.className = 'segment-time'; const ts = Array.isArray(chunk.timestamp) ? chunk.timestamp : [0,0]; t.textContent = `${formatTime(ts[0])}–${formatTime(ts[1])}`;
-      const x = document.createElement('div'); x.className = 'segment-text'; x.textContent = chunk.speaker ? `${chunk.speaker}: ${chunk.text || ''}` : (chunk.text || ''); row.append(t,x); els.segmentsList.append(row);
+      const x = document.createElement('div'); x.className = 'segment-text'; x.textContent = chunk.text || '';
+      if (els.speakerLabelsToggle?.checked && speakerNames.length) {
+        const select = document.createElement('select'); select.className = 'segment-speaker'; select.setAttribute('aria-label', `Говорящий в сегменте ${index + 1}`);
+        select.append(new Option('Без имени', ''));
+        speakerNames.forEach((name) => select.append(new Option(name, name)));
+        select.value = chunk.speaker || '';
+        select.addEventListener('change', () => { chunk.speaker = select.value; rebuildTranscriptFromSegments(); });
+        row.append(t, select, x);
+      } else row.append(t, x);
+      els.segmentsList.append(row);
     }
     els.segmentsBox.classList.toggle('hidden', chunks.length === 0); els.resultEmpty.classList.add('hidden'); els.resultBlock.classList.remove('hidden');
+  }
+
+  function rebuildTranscriptFromSegments() {
+    if (!state.lastSegments.length) return;
+    els.transcript.value = state.lastSegments.map((segment) => {
+      const text = String(segment.text || '').trim();
+      return segment.speaker ? `${segment.speaker}: ${text}` : text;
+    }).filter(Boolean).join('\n');
+    updateWordCount();
   }
 
   function updateWordCount() {
