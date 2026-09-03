@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://cdn.sheetjs.com" crossorigin />
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
-  <link rel="stylesheet" href="./styles.css?build=v1.5.0-20260821-0650" />
+  <link rel="stylesheet" href="./styles.css?build=v1.5.1-20260821-0708" />
 </head>
 <body>
   <main class="shell">
@@ -30,8 +30,8 @@
         <div class="badge">LOCAL AI</div>
         <div class="build-badge" id="buildBadge" aria-label="Версия приложения">
           <span>ВЕРСИЯ</span>
-          <strong id="appVersion">v1.5.0</strong>
-          <small id="appBuildTime">21.08.2026 · 06:50</small>
+          <strong id="appVersion">v1.6.0</strong>
+          <small id="appBuildTime">03.09.2026 · 12:00</small>
         </div>
       </div>
     </header>
@@ -133,8 +133,8 @@
 
             <label class="switch-row speaker-switch">
               <span>
-                <strong>РАЗДЕЛИТЬ ГОВОРЯЩИХ</strong>
-                <small>ВЫ — микрофон · удалённые голоса — отдельные спикеры</small>
+                <strong>РУЧНАЯ РАЗМЕТКА ГОВОРЯЩИХ</strong>
+                <small>После расшифровки назначь имя каждому сегменту</small>
               </span>
               <input id="speakerLabelsToggle" type="checkbox" checked />
               <i></i>
@@ -145,9 +145,9 @@
             <div class="speaker-config-head">
               <div>
                 <strong>ИМЕНА УЧАСТНИКОВ</strong>
-                <small>После анализа проверь, как Спикер 1/2/3 сопоставились с людьми.</small>
+                <small>Эти имена появятся в списке у каждого сегмента.</small>
               </div>
-              <span>DIARIZATION</span>
+              <span>MANUAL</span>
             </div>
             <div class="speaker-name-grid">
               <label class="speaker-name you-name">
@@ -167,7 +167,7 @@
                 <input id="speakerName3" type="text" value="Пётр" maxlength="32" autocomplete="off" />
               </label>
             </div>
-            <p class="speaker-config-note">Модель различает голоса, но не знает реальные имена без образцов голоса. Если после расшифровки Иван и Пётр перепутаны — просто поменяй имена в полях, вся стенограмма обновится.</p>
+            <p class="speaker-config-note">Автоматическое различение голосов пока не выполняется. После распознавания открой сегменты и выбери говорящего вручную. Текст и Excel обновятся.</p>
           </div>
 
           <div class="capture-status idle" id="captureStatus">
@@ -419,13 +419,13 @@
 
     <footer>
       <span>Локальная обработка аудио · без API-ключа · без загрузки записи</span>
-      <span id="footerBuild">Версия v1.5.0 · сборка 21.08.2026 06:50</span>
+      <span id="footerBuild">Версия v1.6.0 · сборка 03.09.2026 12:00</span>
       <span>Системные индикаторы браузера/ОС не скрываются и не обходятся</span>
     </footer>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script defer src="./app.js?build=v1.5.0-20260821-0650"></script>
+  <script defer src="./app.js?build=v1.6.0-20260903-1200"></script>
 </body>
 </html>
