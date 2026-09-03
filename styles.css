@@ -703,6 +703,8 @@ select:focus { border-color: rgba(49,213,255,.52); box-shadow: 0 0 0 3px rgba(49
 .segments-box summary::-webkit-details-marker { display: none; }
 .segments-list { max-height: 260px; overflow: auto; border-top: 1px solid var(--line); }
 .segment { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 10px 13px; border-bottom: 1px solid rgba(151,190,211,.08); font-size: 11px; line-height: 1.5; }
+.segment:has(.segment-speaker) { grid-template-columns: 72px minmax(110px, 160px) 1fr; align-items: start; }
+.segment-speaker { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--text); font: inherit; }
 .segment:last-child { border-bottom: 0; }
 .segment-time { color: var(--cyan-2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9px; }
 .segment-text { color: #b9cad3; }
