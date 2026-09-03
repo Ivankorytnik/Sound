@@ -163,7 +163,7 @@ function candidateList(modelId, preferredDevice, quality) {
       : [{ modelId: tiny, device: 'wasm' }];
   }
 
-  if (quality === 'accurate' || quality === 'max') {
+  if (quality === 'max') {
     return webgpu
       ? [
           { modelId: turbo, device: 'webgpu' },
@@ -171,6 +171,12 @@ function candidateList(modelId, preferredDevice, quality) {
           { modelId: base, device: 'wasm' },
         ]
       : [{ modelId: small, device: 'wasm' }, { modelId: base, device: 'wasm' }];
+  }
+
+  if (quality === 'accurate') {
+    return webgpu
+      ? [{ modelId: small, device: 'webgpu' }, { modelId: base, device: 'wasm' }]
+      : [{ modelId: base, device: 'wasm' }];
   }
 
   if (quality === 'noisy') {
