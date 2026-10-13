@@ -3,6 +3,15 @@ import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transfo
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// Browser stability: keep WASM single-threaded. This avoids memory/thread failures
+// on pages without cross-origin isolation and on machines with limited RAM.
+try {
+  if (env.backends?.onnx?.wasm) {
+    env.backends.onnx.wasm.numThreads = 1;
+    env.backends.onnx.wasm.proxy = false;
+  }
+} catch {}
+
 const pipelines = new Map();
 const cancelledJobs = new Set();
 const post = (type, payload = {}) => self.postMessage({ type, ...payload });
@@ -153,6 +162,7 @@ function candidateList(modelId, preferredDevice, quality) {
     if (modelId.includes('large-v3-turbo')) {
       if (webgpu) list.push({ modelId: small, device: 'webgpu' });
       list.push({ modelId: base, device: 'wasm' });
+      list.push({ modelId: tiny, device: 'wasm' });
     }
     return list;
   }
@@ -169,36 +179,65 @@ function candidateList(modelId, preferredDevice, quality) {
           { modelId: turbo, device: 'webgpu' },
           { modelId: small, device: 'webgpu' },
           { modelId: base, device: 'wasm' },
+          { modelId: tiny, device: 'wasm' },
         ]
-      : [{ modelId: small, device: 'wasm' }, { modelId: base, device: 'wasm' }];
+      : [
+          { modelId: small, device: 'wasm' },
+          { modelId: base, device: 'wasm' },
+          { modelId: tiny, device: 'wasm' },
+        ];
   }
 
-  if (quality === 'accurate') {
+  if (quality === 'accurate' || quality === 'noisy') {
     return webgpu
-      ? [{ modelId: small, device: 'webgpu' }, { modelId: base, device: 'wasm' }]
-      : [{ modelId: base, device: 'wasm' }];
-  }
-
-  if (quality === 'noisy') {
-    return webgpu
-      ? [{ modelId: small, device: 'webgpu' }, { modelId: base, device: 'wasm' }]
-      : [{ modelId: base, device: 'wasm' }];
+      ? [
+          { modelId: small, device: 'webgpu' },
+          { modelId: base, device: 'wasm' },
+          { modelId: tiny, device: 'wasm' },
+        ]
+      : [
+          { modelId: base, device: 'wasm' },
+          { modelId: tiny, device: 'wasm' },
+        ];
   }
 
   return webgpu
-    ? [{ modelId: small, device: 'webgpu' }, { modelId: base, device: 'wasm' }]
-    : [{ modelId: base, device: 'wasm' }];
+    ? [
+        { modelId: small, device: 'webgpu' },
+        { modelId: base, device: 'wasm' },
+        { modelId: tiny, device: 'wasm' },
+      ]
+    : [
+        { modelId: base, device: 'wasm' },
+        { modelId: tiny, device: 'wasm' },
+      ];
+}
+
+function readableEngineError(error, candidate) {
+  const raw = error?.message || (typeof error === 'string' ? error : '');
+  if (raw) return raw;
+  if (typeof error === 'number') {
+    return `Сбой ONNX/WASM при запуске ${candidate.modelId.split('/').pop()} (${candidate.device}), код ${error}. Попробую более лёгкую модель.`;
+  }
+  try {
+    const serialized = JSON.stringify(error);
+    if (serialized && serialized !== '{}') return serialized;
+  } catch {}
+  return `Не удалось запустить ${candidate.modelId.split('/').pop()} через ${candidate.device}.`;
 }
 
 async function createPipeline(modelId, preferredDevice, quality, jobId) {
   const candidates = candidateList(modelId, preferredDevice, quality);
-  let lastError;
+  let lastMessage = 'Не удалось запустить модель распознавания.';
 
   for (const candidate of candidates) {
+    // Whisper is memory-heavy in the browser. fp16/q4 on GPU and q8 on WASM
+    // reduce model memory by several times without changing the page design.
     const dtype = candidate.device === 'webgpu'
-      ? { encoder_model: 'fp32', decoder_model_merged: 'q4' }
-      : undefined;
-    const key = `${candidate.modelId}::${candidate.device}::${dtype ? 'fp32-q4' : 'default'}`;
+      ? { encoder_model: 'fp16', decoder_model_merged: 'q4' }
+      : { encoder_model: 'q8', decoder_model_merged: 'q8' };
+    const dtypeKey = `${dtype.encoder_model}-${dtype.decoder_model_merged}`;
+    const key = `${candidate.modelId}::${candidate.device}::${dtypeKey}`;
 
     if (pipelines.has(key)) {
       post('engine', { jobId, device: candidate.device, modelId: candidate.modelId, cached: true });
@@ -216,6 +255,7 @@ async function createPipeline(modelId, preferredDevice, quality, jobId) {
 
       const pipelineOptions = {
         device: candidate.device,
+        dtype,
         progress_callback: (data) => {
           if (cancelledJobs.has(jobId)) return;
           if (data?.status === 'progress' && Number.isFinite(data.progress)) {
@@ -229,23 +269,22 @@ async function createPipeline(modelId, preferredDevice, quality, jobId) {
           }
         },
       };
-      if (dtype) pipelineOptions.dtype = dtype;
 
       const transcriber = await pipeline('automatic-speech-recognition', candidate.modelId, pipelineOptions);
       pipelines.set(key, transcriber);
       post('engine', { jobId, device: candidate.device, modelId: candidate.modelId, cached: false });
       return { transcriber, ...candidate };
     } catch (error) {
-      lastError = error;
+      lastMessage = readableEngineError(error, candidate);
       post('backend-fallback', {
         jobId,
         from: `${candidate.modelId.split('/').pop()} / ${candidate.device}`,
-        message: error?.message || String(error),
+        message: lastMessage,
       });
     }
   }
 
-  throw lastError || new Error('Не удалось запустить модель распознавания.');
+  throw new Error(lastMessage);
 }
 
 function makeSegments(output, offset, duration, text, detailed) {
