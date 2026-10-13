@@ -2,10 +2,10 @@
   'use strict';
 
   const BUILD = {
-    version: 'v1.6.0',
-    date: '03.09.2026',
-    time: '12:00',
-    key: 'v1.6.0-20260903-1200',
+    version: 'v1.6.2',
+    date: '13.10.2026',
+    time: '11:15',
+    key: 'v1.6.2-20261013-1115',
   };
 
   const MAX_FILE_SIZE = 300 * 1024 * 1024;
@@ -567,7 +567,9 @@
           const current = Number.isFinite(msg.index) ? `${msg.index}/${msg.total || '?'}` : '';
           els.statusNote.textContent = `${msg.message || 'Перепроверяю фрагмент…'} ${current}`.trim();
         } else if (msg.type === 'backend-fallback') {
-          showToast('Переключаюсь на совместимый движок/модель', 'error', 3500);
+          const fallbackNote = msg.message ? `Причина: ${msg.message}` : 'Пробую более лёгкую модель.';
+          els.statusNote.textContent = fallbackNote;
+          showToast('AI не запустился на текущем движке. Переключаюсь автоматически.', 'error', 4200);
         } else if (msg.type === 'result') {
           renderResult(msg.output); setProgress(100, 'ГОТОВО', 'Текст можно редактировать, копировать и выгружать в Excel.');
           finishTranscriptionWorker(); showToast('Распознавание завершено');
