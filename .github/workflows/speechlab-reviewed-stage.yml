@@ -1,0 +1,66 @@
+name: Stage and verify approved Speech Lab v1.6.3
+on:
+  push:
+    branches: [speechlab/stage-v1.6.3-20261015-02]
+permissions:
+  contents: write
+jobs:
+  reviewed-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      SOURCE_BASE: 7dd73553d46007a74a3165b47479c6610ccf85e4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assemble hash-checked approved files, without changing main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse origin/main)" = "$SOURCE_BASE"
+          git worktree add --detach "$RUNNER_TEMP/speechlab-ready" "$SOURCE_BASE"
+          python .speechlab-release/prepare.py "$RUNNER_TEMP/speechlab-ready" | tee "$RUNNER_TEMP/release-manifest.json"
+          for file in app-core.js app.js transcription-worker.js transcription-runtime.js transcription-engine.js; do
+            node --check "$RUNNER_TEMP/speechlab-ready/$file"
+          done
+          git -C "$RUNNER_TEMP/speechlab-ready" diff --check
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y espeak-ng
+      - name: Real Whisper and browser smoke test
+        run: python .speechlab-release/smoke.py "$RUNNER_TEMP/speechlab-ready"
+      - name: Prepare clean six-file commit on a candidate branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/speechlab-ready"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app-core.js index.html app.js transcription-worker.js transcription-runtime.js transcription-engine.js
+          test "$(git diff --cached --name-only | wc -l)" -eq 6
+          git commit -m 'Fix Speech Lab v1.6.3: inference recovery and job lifecycle'
+          git push origin "HEAD:refs/heads/speechlab/candidate-$GITHUB_RUN_ID"
+          echo "CANDIDATE_SHA=$(git rev-parse HEAD)"
+          echo "Candidate: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          git diff "$SOURCE_BASE" HEAD --stat
+      - name: Retain test report and complete prepared files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: speechlab-reviewed-release
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/release-manifest.json
+            ${{ runner.temp }}/speechlab-report/
+            ${{ runner.temp }}/speechlab-ready/app-core.js
+            ${{ runner.temp }}/speechlab-ready/index.html
+            ${{ runner.temp }}/speechlab-ready/app.js
+            ${{ runner.temp }}/speechlab-ready/transcription-worker.js
+            ${{ runner.temp }}/speechlab-ready/transcription-runtime.js
+            ${{ runner.temp }}/speechlab-ready/transcription-engine.js
