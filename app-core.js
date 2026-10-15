@@ -2,10 +2,10 @@
   'use strict';
 
   const BUILD = {
-    version: 'v1.6.2',
-    date: '13.10.2026',
-    time: '11:15',
-    key: 'v1.6.2-20261013-1115',
+    version: 'v1.6.3',
+    date: '15.10.2026',
+    time: '16:22',
+    key: 'v1.6.3-20261015-02',
   };
 
   const MAX_FILE_SIZE = 300 * 1024 * 1024;
@@ -495,13 +495,14 @@
     els.engineHint.textContent = `${p.quality.toUpperCase()} · ${modelName} · блок ${p.chunk} сек${p.overlap ? ` + перекрытие ${p.overlap} сек` : ''}${extra}. AI работает в отдельном Worker.`;
   }
 
-  async function decodeToMono16k(file) {
+  async function decodeToMono16k(file, jobId = null) {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) throw new Error('Браузер не поддерживает AudioContext.');
     const ctx = new AudioContextClass();
     try {
       const buffer = await file.arrayBuffer();
       const decoded = await ctx.decodeAudioData(buffer.slice(0));
+      if (jobId !== null && state.transcriptionJobId !== jobId) return null;
       validateSelectedFile(file, decoded.duration);
       state.currentDuration = decoded.duration;
       const targetRate = 16000;
@@ -509,6 +510,7 @@
       const offline = new OfflineAudioContext(1, length, targetRate);
       const source = offline.createBufferSource(); source.buffer = decoded; source.connect(offline.destination); source.start();
       const rendered = await offline.startRendering();
+      if (jobId !== null && state.transcriptionJobId !== jobId) return null;
       return new Float32Array(rendered.getChannelData(0));
     } catch (error) {
       throw new Error(`Не удалось декодировать аудио: ${error?.message || 'попробуй MP3/WAV/M4A/WEBM.'}`);
@@ -534,31 +536,42 @@
   async function startTranscription() {
     if (state.transcriptionBusy) { cancelTranscription(); return; }
     if (!state.selectedFile) return;
+    const jobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    state.transcriptionJobId = jobId;
+    const isCurrent = () => state.transcriptionJobId === jobId && state.transcriptionBusy;
     resetResult(); setTranscriptionBusy(true); setProgress(2, 'ПОДГОТОВКА АУДИО', 'Декодирую и привожу запись к 16 кГц mono…');
     state.transcriptionStartedAt = performance.now();
     try {
-      const audio = await decodeToMono16k(state.selectedFile);
+      const audio = await decodeToMono16k(state.selectedFile, jobId);
+      if (!isCurrent()) return;
       const profile = getProfile();
       setProgress(8, 'АУДИО ГОТОВО', `${formatTime(state.currentDuration)} · ${profile.quality.toUpperCase()} · ${profile.model === 'auto' ? 'умный выбор модели' : profile.model.split('/').pop()}`);
       const hasWebGPU = await detectWebGPU();
-      const worker = createWorker(); state.transcriptionWorker = worker; state.transcriptionJobId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const jobId = state.transcriptionJobId;
+      if (!isCurrent()) return;
+      const worker = createWorker(); state.transcriptionWorker = worker;
+      let displayedProgress = 8;
+      const reportProgress = (percent, title, note = '') => {
+        if (!Number.isFinite(percent)) return;
+        displayedProgress = Math.max(displayedProgress, percent);
+        setProgress(displayedProgress, title, note);
+      };
       let lastPartial = '';
 
       worker.onmessage = (event) => {
+        if (!isCurrent() || state.transcriptionWorker !== worker) return;
         const msg = event.data || {}; if (msg.jobId && msg.jobId !== jobId) return;
         if (msg.type === 'model-progress') {
-          setProgress(8 + (msg.progress * 0.18), 'ЗАГРУЖАЮ AI-МОДЕЛЬ', msg.file ? `Модель: ${msg.file}` : 'Первый запуск может занять время.');
+          reportProgress(8 + (msg.progress * 0.18), 'ЗАГРУЖАЮ AI-МОДЕЛЬ', msg.file ? `Модель: ${msg.file}` : 'Первый запуск может занять время.');
         } else if (msg.type === 'status') {
-          setProgress(20, 'ГОТОВЛЮ WHISPER', msg.message || 'Запуск модели…');
+          reportProgress(20, 'ГОТОВЛЮ WHISPER', msg.message || 'Запуск модели…');
         } else if (msg.type === 'engine') {
-          setProgress(27, 'WHISPER ГОТОВ', `Движок: ${String(msg.device || '').toUpperCase()} · модель ${msg.modelId?.split('/').pop() || ''}`);
+          reportProgress(27, 'WHISPER ГОТОВ', `Движок: ${String(msg.device || '').toUpperCase()} · модель ${msg.modelId?.split('/').pop() || ''}`);
         } else if (msg.type === 'chunk-progress') {
           const ratio = msg.total ? msg.index / msg.total : 0;
           const p = 28 + ratio * 69;
           const elapsed = (performance.now() - state.transcriptionStartedAt) / 1000;
           const eta = ratio > 0.03 ? Math.max(0, (elapsed / ratio) - elapsed) : null;
-          setProgress(p, `РАСПОЗНАЮ · ${msg.index}/${msg.total}`, `${msg.skipped ? `Пропущено тишины: ${msg.skipped}. ` : ''}${msg.retried ? `Перепроверено: ${msg.retried}. ` : ''}${Number.isFinite(eta) ? `Осталось ~${formatTime(eta)}.` : 'Считаю скорость…'}`);
+          reportProgress(p, `РАСПОЗНАЮ · ${msg.index}/${msg.total}`, `${msg.skipped ? `Пропущено тишины: ${msg.skipped}. ` : ''}${msg.retried ? `Перепроверено: ${msg.retried}. ` : ''}${Number.isFinite(eta) ? `Осталось ~${formatTime(eta)}.` : 'Считаю скорость…'}`);
           if (msg.partialText) {
             lastPartial = `${lastPartial} ${msg.partialText}`.replace(/\s+/g, ' ').trim();
             renderLiveText(lastPartial);
@@ -579,7 +592,10 @@
           setProgress(0, 'ОСТАНОВЛЕНО', 'Распознавание остановлено пользователем.'); finishTranscriptionWorker();
         }
       };
-      worker.onerror = (event) => throwWorkerError(event.message || 'Ошибка Web Worker.');
+      worker.onerror = (event) => {
+        if (!isCurrent() || state.transcriptionWorker !== worker) return;
+        throwWorkerError(event.message || 'Ошибка Web Worker.');
+      };
       const transferable = audio.buffer;
       worker.postMessage({
         type: 'transcribe', jobId, audioBuffer: transferable, modelId: profile.model,
@@ -589,18 +605,37 @@
         detailedTimestamps: profile.detailedTimestamps, cleanup: profile.cleanup, quality: profile.quality,
       }, [transferable]);
     } catch (error) {
+      if (!isCurrent()) return;
       console.error(error); setProgress(0, 'ОШИБКА', error?.message || 'Не удалось распознать запись.'); showToast(error?.message || 'Ошибка распознавания', 'error', 4500); finishTranscriptionWorker();
     }
   }
 
   function throwWorkerError(message) {
-    setProgress(0, 'ОШИБКА AI', message); showToast(message, 'error', 4500); finishTranscriptionWorker();
+    const completed = Number.parseFloat(els.progressValue.textContent) || 0;
+    setProgress(completed, 'ОШИБКА AI', message); showToast(message, 'error', 4500); finishTranscriptionWorker();
   }
 
   function cancelTranscription() {
     if (!state.transcriptionBusy) return;
-    try { state.transcriptionWorker?.postMessage({ type: 'cancel', jobId: state.transcriptionJobId }); } catch {}
-    setTimeout(() => { if (state.transcriptionBusy) { state.transcriptionWorker?.terminate(); setProgress(0, 'ОСТАНОВЛЕНО', 'Worker принудительно остановлен.'); finishTranscriptionWorker(); } }, 800);
+    const worker = state.transcriptionWorker;
+    const jobId = state.transcriptionJobId;
+    // Invalidate the job BEFORE allowing another one to start.
+    state.transcriptionWorker = null;
+    state.transcriptionJobId = null;
+    setTranscriptionBusy(false);
+    setProgress(0, 'ОСТАНОВЛЕНО', 'Распознавание остановлено пользователем.');
+    if (!worker) return;
+
+    // This timer owns ONLY the old worker and never touches current UI state.
+    const stopTimer = setTimeout(() => worker.terminate(), 800);
+    const closeOldWorker = () => { clearTimeout(stopTimer); worker.terminate(); };
+    worker.onmessage = ({ data = {} }) => {
+      if (data.jobId && data.jobId !== jobId) return;
+      if (['cancelled', 'result', 'error'].includes(data.type)) closeOldWorker();
+    };
+    worker.onerror = closeOldWorker;
+    try { worker.postMessage({ type: 'cancel', jobId }); }
+    catch { closeOldWorker(); }
   }
 
   function finishTranscriptionWorker() {

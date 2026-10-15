@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const core = document.createElement('script');
-  core.src = './app-core.js?build=v1.6.2-20261013-1115';
+  core.src = './app-core.js?build=v1.6.3-20261015-02';
   core.defer = true;
   core.addEventListener('load', () => {
     const folder = document.createElement('script');

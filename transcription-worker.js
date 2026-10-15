@@ -1,18 +1,7 @@
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm';
+import { createResilientTranscriber, readableEngineError } from './transcription-runtime.js?build=v1.6.3-20261015-02';
 
-env.allowLocalModels = false;
-env.useBrowserCache = true;
-
-// Browser stability: keep WASM single-threaded. This avoids memory/thread failures
-// on pages without cross-origin isolation and on machines with limited RAM.
-try {
-  if (env.backends?.onnx?.wasm) {
-    env.backends.onnx.wasm.numThreads = 1;
-    env.backends.onnx.wasm.proxy = false;
-  }
-} catch {}
-
-const pipelines = new Map();
+const activeSessions = new Map();
+let activeJobId = null;
 const cancelledJobs = new Set();
 const post = (type, payload = {}) => self.postMessage({ type, ...payload });
 
@@ -164,7 +153,17 @@ function candidateList(modelId, preferredDevice, quality) {
       list.push({ modelId: base, device: 'wasm' });
       list.push({ modelId: tiny, device: 'wasm' });
     }
-    return list;
+    if (!modelId.includes('tiny')) {
+      if (!modelId.includes('base')) list.push({ modelId: base, device: 'wasm' });
+      list.push({ modelId: tiny, device: 'wasm' });
+    }
+    const seen = new Set();
+    return list.filter((candidate) => {
+      const key = `${candidate.modelId}::${candidate.device}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   if (quality === 'fast') {
@@ -213,80 +212,6 @@ function candidateList(modelId, preferredDevice, quality) {
       ];
 }
 
-function readableEngineError(error, candidate) {
-  const raw = error?.message || (typeof error === 'string' ? error : '');
-  if (raw) return raw;
-  if (typeof error === 'number') {
-    return `Сбой ONNX/WASM при запуске ${candidate.modelId.split('/').pop()} (${candidate.device}), код ${error}. Попробую более лёгкую модель.`;
-  }
-  try {
-    const serialized = JSON.stringify(error);
-    if (serialized && serialized !== '{}') return serialized;
-  } catch {}
-  return `Не удалось запустить ${candidate.modelId.split('/').pop()} через ${candidate.device}.`;
-}
-
-async function createPipeline(modelId, preferredDevice, quality, jobId) {
-  const candidates = candidateList(modelId, preferredDevice, quality);
-  let lastMessage = 'Не удалось запустить модель распознавания.';
-
-  for (const candidate of candidates) {
-    // Whisper is memory-heavy in the browser. fp16/q4 on GPU and q8 on WASM
-    // reduce model memory by several times without changing the page design.
-    const dtype = candidate.device === 'webgpu'
-      ? { encoder_model: 'fp16', decoder_model_merged: 'q4' }
-      : { encoder_model: 'q8', decoder_model_merged: 'q8' };
-    const dtypeKey = `${dtype.encoder_model}-${dtype.decoder_model_merged}`;
-    const key = `${candidate.modelId}::${candidate.device}::${dtypeKey}`;
-
-    if (pipelines.has(key)) {
-      post('engine', { jobId, device: candidate.device, modelId: candidate.modelId, cached: true });
-      return { transcriber: pipelines.get(key), ...candidate };
-    }
-
-    try {
-      post('status', {
-        jobId,
-        stage: 'model',
-        message: candidate.device === 'webgpu'
-          ? `Загружаю ${candidate.modelId.split('/').pop()} через WebGPU…`
-          : `Загружаю ${candidate.modelId.split('/').pop()} в Worker/WASM…`,
-      });
-
-      const pipelineOptions = {
-        device: candidate.device,
-        dtype,
-        progress_callback: (data) => {
-          if (cancelledJobs.has(jobId)) return;
-          if (data?.status === 'progress' && Number.isFinite(data.progress)) {
-            post('model-progress', {
-              jobId,
-              progress: Math.max(0, Math.min(100, data.progress)),
-              file: data.file || '',
-              device: candidate.device,
-              modelId: candidate.modelId,
-            });
-          }
-        },
-      };
-
-      const transcriber = await pipeline('automatic-speech-recognition', candidate.modelId, pipelineOptions);
-      pipelines.set(key, transcriber);
-      post('engine', { jobId, device: candidate.device, modelId: candidate.modelId, cached: false });
-      return { transcriber, ...candidate };
-    } catch (error) {
-      lastMessage = readableEngineError(error, candidate);
-      post('backend-fallback', {
-        jobId,
-        from: `${candidate.modelId.split('/').pop()} / ${candidate.device}`,
-        message: lastMessage,
-      });
-    }
-  }
-
-  throw new Error(lastMessage);
-}
-
 function makeSegments(output, offset, duration, text, detailed) {
   if (detailed && Array.isArray(output?.chunks) && output.chunks.length) {
     return output.chunks
@@ -310,7 +235,8 @@ async function runChunk(transcriber, audio, language, quality, detailedTimestamp
     top_k: 0,
     do_sample: false,
     num_beams: retry ? 3 : highAccuracy ? 2 : 1,
-    max_new_tokens: 448,
+    // Whisper has 448 decoder positions INCLUDING prompt tokens.
+    max_length: 448,
   };
   if (language && language !== 'auto') options.language = language;
   return transcriber(audio, options);
@@ -333,15 +259,35 @@ async function transcribeJob(message) {
   } = message;
 
   cancelledJobs.delete(jobId);
+  if (!(audioBuffer instanceof ArrayBuffer) || audioBuffer.byteLength === 0 || audioBuffer.byteLength % 4) {
+    throw new Error('Запись пуста или аудиоданные повреждены.');
+  }
   const audio = new Float32Array(audioBuffer);
   const sampleRate = 16000;
+  if (audio.length > sampleRate * 90 * 60) throw new Error('Запись длиннее 90 минут.');
+  for (let i = 0; i < audio.length; i += 1) {
+    if (!Number.isFinite(audio[i])) throw new Error('В аудиоданных обнаружены некорректные значения.');
+  }
   const totalSeconds = audio.length / sampleRate;
-  const { transcriber, device, modelId: resolvedModel } = await createPipeline(modelId, preferredDevice, quality, jobId);
+  const session = createResilientTranscriber(
+    candidateList(modelId, preferredDevice, quality), jobId,
+    (type, payload) => {
+      if (!cancelledJobs.has(jobId)) post(type, { jobId, ...payload });
+    },
+  );
+  activeSessions.set(jobId, session);
+  let device = null;
+  let resolvedModel = null;
+  const transcriber = async (samples, options) => {
+    const output = await session.transcribe(samples, options);
+    ({ device, modelId: resolvedModel } = session.current);
+    return output;
+  };
 
   const chunkSamples = Math.max(sampleRate * 8, Math.floor(Math.min(29, chunkSeconds) * sampleRate));
   const overlapSamples = Math.max(0, Math.floor(Math.min(overlapSeconds, chunkSeconds / 4) * sampleRate));
   const stepSamples = Math.max(sampleRate, chunkSamples - overlapSamples);
-  const totalChunks = Math.max(1, Math.ceil(Math.max(1, audio.length - overlapSamples) / stepSamples));
+  const totalChunks = 1 + Math.ceil(Math.max(0, audio.length - chunkSamples) / stepSamples);
 
   const segments = [];
   const texts = [];
@@ -369,11 +315,13 @@ async function transcribeJob(message) {
         jobId, index: processed, total: totalChunks, skipped, retried, device,
         modelId: resolvedModel, startSeconds: start / sampleRate, totalSeconds,
       });
+      if (end >= audio.length) break;
       continue;
     }
 
     const slice = gentlyNormalize(rawSlice);
     let output = await runChunk(transcriber, slice, language, quality, detailedTimestamps, false);
+    if (cancelledJobs.has(jobId)) throw Object.assign(new Error('Остановлено.'), { name: 'AbortError' });
     let rawText = normalizeText(output?.text);
     let score = textQualityScore(rawText, duration, activity.activeRatio);
     const suspicious = suspiciousRepeat(rawText)
@@ -387,6 +335,7 @@ async function transcribeJob(message) {
         message: 'Перепроверяю сомнительный фрагмент…',
       });
       const retryOutput = await runChunk(transcriber, slice, language, quality, detailedTimestamps, true);
+      if (cancelledJobs.has(jobId)) throw Object.assign(new Error('Остановлено.'), { name: 'AbortError' });
       const retryText = normalizeText(retryOutput?.text);
       const retryScore = textQualityScore(retryText, duration, activity.activeRatio);
       retried += 1;
@@ -398,13 +347,14 @@ async function transcribeJob(message) {
     }
 
     let text = trimOverlap(previousContext, rawText);
+    let strictReplaced = false;
     if (cleanup !== 'off' && suspiciousRepeat(text)) {
-      if (cleanup === 'strict') text = '[неразборчивая речь / повтор]';
+      if (cleanup === 'strict') { text = '[неразборчивая речь / повтор]'; strictReplaced = true; }
     }
 
     if (text) {
       const offset = start / sampleRate;
-      const chunkSegments = makeSegments(output, offset, duration, text, detailedTimestamps);
+      const chunkSegments = makeSegments(output, offset, duration, text, detailedTimestamps && !strictReplaced);
       if (chunkSegments.length) {
         chunkSegments[0].text = trimOverlap(previousContext, chunkSegments[0].text);
       }
@@ -432,8 +382,10 @@ async function transcribeJob(message) {
       totalSeconds,
       partialText: text,
     });
+    if (end >= audio.length) break;
   }
 
+  if (cancelledJobs.has(jobId)) throw Object.assign(new Error('Остановлено.'), { name: 'AbortError' });
   post('result', {
     jobId,
     output: {
@@ -446,6 +398,7 @@ async function transcribeJob(message) {
         skipped,
         retried,
         quality,
+        recoveries: session.attempts,
       },
     },
   });
@@ -454,16 +407,37 @@ async function transcribeJob(message) {
 self.addEventListener('message', (event) => {
   const message = event.data || {};
   if (message.type === 'cancel') {
-    cancelledJobs.add(message.jobId);
+    if (message.jobId === activeJobId) {
+      cancelledJobs.add(message.jobId);
+      activeSessions.get(message.jobId)?.close();
+    }
     return;
   }
-  if (message.type === 'transcribe') {
-    transcribeJob(message).catch((error) => {
+  if (message.type !== 'transcribe') return;
+  if (activeJobId !== null) {
+    if (message.jobId !== activeJobId) {
+      post('error', { jobId: message.jobId, message: 'Другая запись уже обрабатывается.' });
+    }
+    return;
+  }
+  activeJobId = message.jobId;
+  transcribeJob(message).catch((error) => {
+    if (error?.name === 'AbortError' || cancelledJobs.has(message.jobId)) {
+      post('cancelled', { jobId: message.jobId });
+    } else {
       post('error', {
         jobId: message.jobId,
-        message: error?.message || String(error) || 'Ошибка распознавания.',
+        message: error?.message && !/^-?\d+$/.test(error.message)
+          ? error.message
+          : readableEngineError(error, activeSessions.get(message.jobId)?.current),
+        attempts: error?.attempts || [],
         stack: error?.stack || '',
       });
-    });
-  }
+    }
+  }).finally(() => {
+    activeSessions.get(message.jobId)?.close();
+    activeSessions.delete(message.jobId);
+    cancelledJobs.delete(message.jobId);
+    activeJobId = null;
+  });
 });
