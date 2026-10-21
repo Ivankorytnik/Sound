@@ -52,12 +52,12 @@
         </div>
 
         <div class="mode-tabs" role="tablist" aria-label="Режим распознавания">
-          <button class="mode-tab active" id="liveModeBtn" type="button" data-mode="live" role="tab" aria-selected="true">ЖИВОЙ РАЗГОВОР</button>
-          <button class="mode-tab" id="dictaphoneModeBtn" type="button" data-mode="dictaphone" role="tab" aria-selected="false">ДИКТОФОН</button>
+          <button class="mode-tab" id="liveModeBtn" type="button" data-mode="live" role="tab" aria-selected="false">ЖИВОЙ РАЗГОВОР</button>
+          <button class="mode-tab active" id="dictaphoneModeBtn" type="button" data-mode="dictaphone" role="tab" aria-selected="true">ДИКТОФОН</button>
           <button class="mode-tab" id="fileModeBtn" type="button" data-mode="file" role="tab" aria-selected="false">ИЗ ФАЙЛА</button>
         </div>
 
-        <section class="mode-section" id="liveMode">
+        <section class="mode-section hidden" id="liveMode">
           <div class="live-hero">
             <div class="live-kicker"><span class="live-dot"></span> ZOOM · ТОЛК · MEET · ЛЮБАЯ ВКЛАДКА</div>
             <h3>ЗАХВАТ ЗВУКА<br>ВО ВРЕМЯ ЗВОНКА</h3>
@@ -221,7 +221,7 @@
         </section>
 
 
-        <section class="mode-section hidden" id="dictaphoneMode">
+        <section class="mode-section" id="dictaphoneMode">
           <div class="live-hero dictaphone-hero">
             <div class="live-kicker"><span class="live-dot"></span> МИКРОФОН · ЛОКАЛЬНАЯ ЗАПИСЬ</div>
             <h3>ДИКТОФОН<br>С РАСПОЗНАВАНИЕМ</h3>
@@ -429,6 +429,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script defer src="./app.js?build=dictaphone-toolbar-20261021-01"></script>
+  <script defer src="./app.js?build=default-dictaphone-20261021-01"></script>
 </body>
 </html>
