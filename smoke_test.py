@@ -21,8 +21,23 @@ with sync_playwright() as p:
     assert page.locator("#appVersion").inner_text() == "v1.6.5"
     assert page.locator("#chooseSaveFolderBtn").count() == 1
     assert page.locator("#transcribeBtn").is_disabled()
+    # Dictaphone is selected by default before any user interaction.
+    assert page.locator("#dictaphoneModeBtn").get_attribute("aria-selected") == "true"
+    assert page.locator("#dictaphoneModeBtn").evaluate("(el) => el.classList.contains('active')")
+    assert page.locator("#dictaphoneMode").is_visible()
+    assert page.locator("#liveMode").is_hidden()
+    assert page.locator("#fileMode").is_hidden()
+    assert page.locator("#startDictaphoneBtn").is_visible()
+    assert page.locator("#stopDictaphoneBtn").is_hidden()
+    # Switching modes remains possible and does not change the default after reload.
+    page.click("#liveModeBtn")
+    assert page.locator("#liveMode").is_visible()
     page.click("#dictaphoneModeBtn")
     assert page.locator("#dictaphoneMode").is_visible()
+    page.reload(wait_until="networkidle")
+    assert page.locator("#dictaphoneMode").is_visible()
+    assert page.locator("#liveMode").is_hidden()
+    assert page.locator("#dictaphoneModeBtn").get_attribute("aria-selected") == "true"
     # Desktop: the toggle and recording status share the same row and height.
     toggle_box = page.locator("#dictaphoneMode > .capture-options").bounding_box()
     status_box = page.locator("#dictaphoneStatus").bounding_box()
