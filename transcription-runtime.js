@@ -1,4 +1,4 @@
-// Speech Lab v1.6.3. A failed ONNX runtime is never reused.
+// Speech Lab v1.6.4. A failed ONNX runtime is never reused.
 export function readableEngineError(error, candidate = {}) {
   const raw = String(error?.message ?? error?.code ?? error ?? '').trim();
   const model = String(candidate.modelId || 'Whisper').split('/').pop();
@@ -92,7 +92,7 @@ class EngineClient {
 export function createResilientTranscriber(candidates, jobId, emit, options = {}) {
   const WorkerClass = options.WorkerClass || globalThis.Worker;
   const engineUrl = options.engineUrl || new URL(
-    './transcription-engine.js?build=v1.6.3-20261015-02', import.meta.url,
+    './transcription-engine.js?build=v1.6.4-20261021-01', import.meta.url,
   );
   const timeoutMs = {
     load: options.loadTimeoutMs ?? 10 * 60 * 1000,
