@@ -39,7 +39,7 @@
   };
 
   const state = {
-    mode: 'live', selectedFile: null, previewUrl: null, recordedBlob: null, currentDuration: 0,
+    mode: 'dictaphone', selectedFile: null, previewUrl: null, recordedBlob: null, currentDuration: 0,
     transcriptionWorker: null, transcriptionJobId: null, transcriptionBusy: false, transcriptionStartedAt: 0,
     displayStream: null, micStream: null, mixContext: null, mixDestination: null, captureRecorder: null, captureChunks: [],
     captureStartedAt: 0, captureTimerId: null, captureStopping: false, captureStarting: false, captureRecordingError: null,
@@ -1043,7 +1043,7 @@
   function init() {
     els.appVersion.textContent = BUILD.version; els.appBuildTime.textContent = `${BUILD.date} · ${BUILD.time}`; els.footerBuild.textContent = `Версия ${BUILD.version} · сборка ${BUILD.date} ${BUILD.time}`;
     const lastSurface = safeStorageGet('speechlab.lastSurface'); if (lastSurface) els.lastSourceText.textContent = displaySurfaceLabel(lastSurface);
-    setMode('live'); updateCaptureModeUI(); updateEngineHint(); bindEvents();
+    setMode('dictaphone'); updateCaptureModeUI(); updateEngineHint(); bindEvents();
     setCaptureStatus('idle', 'ГОТОВ К ЗАХВАТУ');
   }
 
