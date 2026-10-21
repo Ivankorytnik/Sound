@@ -1075,3 +1075,45 @@ footer { padding-top: 10px; font-size: 8px; }
   #dictaphoneMode .dictaphone-toolbar > .capture-help[open] { grid-column: 1; grid-row: 2; }
   #dictaphoneMode .dictaphone-toolbar > .dictaphone-folder-slot { grid-column: 1; grid-row: 3; }
 }
+
+
+/* Dictaphone: auto-transcription toggle and recording status side-by-side. */
+#dictaphoneMode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+#dictaphoneMode > .live-hero,
+#dictaphoneMode > .privacy-card,
+#dictaphoneMode > .dictaphone-toolbar {
+  grid-column: 1 / -1;
+}
+#dictaphoneMode > .privacy-card,
+#dictaphoneMode > .capture-options,
+#dictaphoneMode > .capture-status,
+#dictaphoneMode > .dictaphone-toolbar {
+  margin-top: 0;
+}
+#dictaphoneMode > .capture-options,
+#dictaphoneMode > .capture-status {
+  min-width: 0;
+}
+#dictaphoneMode > .capture-options {
+  grid-column: 1;
+}
+#dictaphoneMode > .capture-status {
+  grid-column: 2;
+}
+#dictaphoneMode > .capture-options > .switch-row {
+  min-height: 100%;
+}
+@media (max-width: 700px) {
+  #dictaphoneMode {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #dictaphoneMode > .capture-options,
+  #dictaphoneMode > .capture-status {
+    grid-column: 1;
+  }
+}
