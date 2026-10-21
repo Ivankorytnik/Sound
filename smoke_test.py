@@ -23,6 +23,14 @@ with sync_playwright() as p:
     assert page.locator("#transcribeBtn").is_disabled()
     page.click("#dictaphoneModeBtn")
     assert page.locator("#dictaphoneMode").is_visible()
+    # Desktop: the toggle and recording status share the same row and height.
+    toggle_box = page.locator("#dictaphoneMode > .capture-options").bounding_box()
+    status_box = page.locator("#dictaphoneStatus").bounding_box()
+    assert toggle_box and status_box
+    assert abs(toggle_box["y"] - status_box["y"]) <= 2, "Dictaphone toggle and status must align"
+    assert toggle_box["x"] + toggle_box["width"] <= status_box["x"] + 2, "Status must be to the right of toggle"
+    assert abs(toggle_box["height"] - status_box["height"]) <= 2, "Dictaphone cards must match height"
+    assert page.locator("#dictaphoneAutoTranscribeToggle").is_checked()
     page.wait_for_selector("#dictaphoneSaveFolderSlot #chooseSaveFolderBtn")
     start_box = page.locator("#startDictaphoneBtn").bounding_box()
     help_box = page.locator("#dictaphoneMode .capture-help").bounding_box()
@@ -35,6 +43,10 @@ with sync_playwright() as p:
     assert page.locator("#dictaphoneMode .capture-help").get_attribute("open") is not None
     page.click("#dictaphoneMode .capture-help summary")
     page.set_viewport_size({"width": 390, "height": 780})
+    toggle_box = page.locator("#dictaphoneMode > .capture-options").bounding_box()
+    status_box = page.locator("#dictaphoneStatus").bounding_box()
+    assert toggle_box and status_box
+    assert status_box["y"] >= toggle_box["y"] + toggle_box["height"], "Mobile cards must stack"
     start_box = page.locator("#startDictaphoneBtn").bounding_box()
     help_box = page.locator("#dictaphoneMode .capture-help").bounding_box()
     folder_box = page.locator("#dictaphoneSaveFolderSlot .folder-save-row").bounding_box()
