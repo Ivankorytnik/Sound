@@ -2,10 +2,10 @@
   'use strict';
 
   const BUILD = {
-    version: 'v1.6.3',
-    date: '15.10.2026',
-    time: '16:22',
-    key: 'v1.6.3-20261015-02',
+    version: 'v1.6.4',
+    date: '21.10.2026',
+    time: '10:21',
+    key: 'v1.6.4-20261021-01',
   };
 
   const MAX_FILE_SIZE = 300 * 1024 * 1024;
