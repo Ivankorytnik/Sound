@@ -121,14 +121,19 @@ function suspiciousRepeat(text) {
   return false;
 }
 
-function textQualityScore(text, duration, activeRatio) {
+function textQualityScore(text, duration, activeRatio, language = 'auto') {
   const clean = normalizeText(text);
   const words = clean.split(/\s+/u).map(normalizeWord).filter(Boolean);
   if (!words.length) return -100;
   const unique = new Set(words).size / words.length;
   const cyrillic = (clean.match(/[а-яё]/giu) || []).length;
   const letters = (clean.match(/[a-zа-яё]/giu) || []).length;
-  const languageFit = letters ? cyrillic / letters : 0.5;
+  const latin = (clean.match(/[a-z]/giu) || []).length;
+  const languageFit = letters
+    ? language === 'english' ? latin / letters
+      : language === 'russian' ? cyrillic / letters
+        : Math.max(cyrillic, latin) / letters
+    : 0.5;
   const expectedFloor = Math.max(1, Math.floor(duration * Math.max(0.12, activeRatio) * 0.7));
   let score = Math.min(words.length, expectedFloor * 2) + unique * 12 + languageFit * 4;
   if (suspiciousRepeat(clean)) score -= 18;
@@ -190,6 +195,7 @@ function candidateList(modelId, preferredDevice, quality) {
   if (quality === 'accurate' || quality === 'noisy') {
     return webgpu
       ? [
+          ...(quality === 'accurate' ? [{ modelId: turbo, device: 'webgpu' }] : []),
           { modelId: small, device: 'webgpu' },
           { modelId: base, device: 'wasm' },
           { modelId: tiny, device: 'wasm' },
@@ -323,7 +329,7 @@ async function transcribeJob(message) {
     let output = await runChunk(transcriber, slice, language, quality, detailedTimestamps, false);
     if (cancelledJobs.has(jobId)) throw Object.assign(new Error('Остановлено.'), { name: 'AbortError' });
     let rawText = normalizeText(output?.text);
-    let score = textQualityScore(rawText, duration, activity.activeRatio);
+    let score = textQualityScore(rawText, duration, activity.activeRatio, language);
     const suspicious = suspiciousRepeat(rawText)
       || (activity.activeRatio > 0.35 && duration > 8 && rawText.split(/\s+/u).filter(Boolean).length < 3);
 
@@ -337,7 +343,7 @@ async function transcribeJob(message) {
       const retryOutput = await runChunk(transcriber, slice, language, quality, detailedTimestamps, true);
       if (cancelledJobs.has(jobId)) throw Object.assign(new Error('Остановлено.'), { name: 'AbortError' });
       const retryText = normalizeText(retryOutput?.text);
-      const retryScore = textQualityScore(retryText, duration, activity.activeRatio);
+      const retryScore = textQualityScore(retryText, duration, activity.activeRatio, language);
       retried += 1;
       if (retryScore > score + 0.5) {
         output = retryOutput;
@@ -355,7 +361,7 @@ async function transcribeJob(message) {
     if (text) {
       const offset = start / sampleRate;
       const chunkSegments = makeSegments(output, offset, duration, text, detailedTimestamps && !strictReplaced);
-      if (chunkSegments.length) {
+      if (detailedTimestamps && !strictReplaced && chunkSegments.length) {
         chunkSegments[0].text = trimOverlap(previousContext, chunkSegments[0].text);
       }
       for (const segment of chunkSegments) {
