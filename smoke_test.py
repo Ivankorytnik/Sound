@@ -23,8 +23,28 @@ with sync_playwright() as p:
     assert page.locator("#transcribeBtn").is_disabled()
     page.click("#dictaphoneModeBtn")
     assert page.locator("#dictaphoneMode").is_visible()
+    page.wait_for_selector("#dictaphoneSaveFolderSlot #chooseSaveFolderBtn")
+    start_box = page.locator("#startDictaphoneBtn").bounding_box()
+    help_box = page.locator("#dictaphoneMode .capture-help").bounding_box()
+    folder_box = page.locator("#dictaphoneSaveFolderSlot .folder-save-row").bounding_box()
+    assert start_box and help_box and folder_box
+    assert abs(start_box["y"] - help_box["y"]) <= 3, "Help is not inline with start"
+    assert abs(start_box["y"] - folder_box["y"]) <= 3, "Save folder is not inline with start"
+    assert start_box["x"] < help_box["x"] < folder_box["x"]
+    page.click("#dictaphoneMode .capture-help summary")
+    assert page.locator("#dictaphoneMode .capture-help").get_attribute("open") is not None
+    page.click("#dictaphoneMode .capture-help summary")
+    page.set_viewport_size({"width": 390, "height": 780})
+    start_box = page.locator("#startDictaphoneBtn").bounding_box()
+    help_box = page.locator("#dictaphoneMode .capture-help").bounding_box()
+    folder_box = page.locator("#dictaphoneSaveFolderSlot .folder-save-row").bounding_box()
+    assert start_box and help_box and folder_box
+    assert start_box["y"] < help_box["y"] < folder_box["y"], "Mobile toolbar must stack"
+    page.set_viewport_size({"width": 1280, "height": 720})
     page.click("#fileModeBtn")
     assert page.locator("#fileMode").is_visible()
+    page.wait_for_selector(".input-panel > .folder-save-row #chooseSaveFolderBtn")
+    assert page.locator("#chooseSaveFolderBtn").count() == 1
     page.locator("#fileInput").set_input_files({
         "name": "test.wav", "mimeType": "audio/wav",
         "buffer": b"RIFF" + b"\\x00" * 100

@@ -143,9 +143,27 @@
 
     const audioButton = document.getElementById('downloadAudioBtn');
     const settingsHead = document.querySelector('.settings-head');
-    if (audioButton) audioButton.insertAdjacentElement('afterend', row);
-    else if (settingsHead) settingsHead.insertAdjacentElement('beforebegin', row);
-    else document.querySelector('.input-panel')?.appendChild(row);
+    const dictaphoneMode = document.getElementById('dictaphoneMode');
+    const dictaphoneSlot = document.getElementById('dictaphoneSaveFolderSlot');
+
+    // Keep one folder picker (and its selected directory) across all modes.
+    // Only move the existing DOM node when the visible mode changes.
+    function placeFolderPicker() {
+      if (dictaphoneSlot && dictaphoneMode && !dictaphoneMode.classList.contains('hidden')) {
+        if (row.parentElement !== dictaphoneSlot) dictaphoneSlot.appendChild(row);
+      } else if (audioButton) {
+        if (row.previousElementSibling !== audioButton) audioButton.insertAdjacentElement('afterend', row);
+      } else if (settingsHead) {
+        settingsHead.insertAdjacentElement('beforebegin', row);
+      } else {
+        document.querySelector('.input-panel')?.appendChild(row);
+      }
+    }
+    placeFolderPicker();
+    if (dictaphoneMode && dictaphoneSlot) {
+      const observer = new MutationObserver(placeFolderPicker);
+      observer.observe(dictaphoneMode, { attributes: true, attributeFilter: ['class'] });
+    }
 
     folderStatusEl = document.getElementById('saveFolderStatus');
     folderButtonEl = document.getElementById('chooseSaveFolderBtn');
