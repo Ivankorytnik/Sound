@@ -18,7 +18,7 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("http://127.0.0.1:8765", wait_until="networkidle")
     page.wait_for_selector("#appVersion")
-    assert page.locator("#appVersion").inner_text() == "v1.6.4"
+    assert page.locator("#appVersion").inner_text() == "v1.6.5"
     assert page.locator("#chooseSaveFolderBtn").count() == 1
     assert page.locator("#transcribeBtn").is_disabled()
     page.click("#dictaphoneModeBtn")
@@ -33,6 +33,27 @@ with sync_playwright() as p:
     assert page.locator("#transcribeBtn").is_enabled()
     page.click("#removeFileBtn")
     assert page.locator("#transcribeBtn").is_disabled()
+    # Simulate a display-capture source without audio. It must be rejected.
+    page.click("#liveModeBtn")
+    page.evaluate("""() => {
+      window.__stopped = false;
+      navigator.mediaDevices.getDisplayMedia = async () => ({
+        getVideoTracks: () => [{
+          readyState: 'live',
+          getSettings: () => ({ displaySurface: 'browser' }),
+          stop: () => { window.__stopped = true; },
+        }],
+        getAudioTracks: () => [],
+        getTracks: () => [{
+          stop: () => { window.__stopped = true; }
+        }],
+      });
+    }""")
+    page.click("#startCaptureBtn")
+    page.wait_for_function("document.querySelector('#captureStatusText').textContent.includes('НЕ ПЕРЕДАН')")
+    assert page.locator("#captureDiagnostic").is_visible()
+    assert page.locator("#stopCaptureBtn").is_hidden()
+    assert page.evaluate("window.__stopped")
     assert not errors, errors
     browser.close()
 server.shutdown()

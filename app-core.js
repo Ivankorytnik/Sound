@@ -2,10 +2,10 @@
   'use strict';
 
   const BUILD = {
-    version: 'v1.6.4',
+    version: 'v1.6.5',
     date: '21.10.2026',
-    time: '10:21',
-    key: 'v1.6.4-20261021-01',
+    time: '11:46',
+    key: 'v1.6.5-20261021-01',
   };
 
   const MAX_FILE_SIZE = 300 * 1024 * 1024;
@@ -191,40 +191,57 @@
     try {
       state.displayStream = await navigator.mediaDevices.getDisplayMedia(constraints);
     } catch (error) {
-      const cancelled = error?.name === 'NotAllowedError' || error?.name === 'AbortError';
-      setCaptureStatus(cancelled ? 'idle' : 'error', cancelled ? 'ВЫБОР ОТМЕНЁН' : 'ОШИБКА ВЫБОРА ИСТОЧНИКА');
+      const denied = error?.name === 'NotAllowedError';
+      const cancelled = error?.name === 'AbortError';
+      setCaptureStatus(denied || !cancelled ? 'error' : 'idle', denied ? 'ДОСТУП НЕ ПОЛУЧЕН' : cancelled ? 'ВЫБОР ПРЕРВАН' : 'ОШИБКА ВЫБОРА ИСТОЧНИКА');
       setIndicator(els.systemIndicator, els.systemStatus, false, 'Звук встречи: не подключён');
       setIndicator(els.micIndicator, els.micStatus, false, 'Микрофон: не подключён');
-      if (!cancelled) showCaptureDiagnostic('Не удалось открыть источник', mediaErrorMessage(error, 'Захват экрана'), { testMic: true });
+      showCaptureDiagnostic(denied ? 'Отказ или отмена выбора' : 'Не удалось открыть источник', mediaErrorMessage(error, 'Захват экрана'), { retryTab: true, testMic: false });
       return;
     }
     const videoTrack = state.displayStream.getVideoTracks()[0];
     const actualSurface = videoTrack?.getSettings?.().displaySurface || surface;
-    safeStorageSet('speechlab.lastSurface', actualSurface);
-    els.lastSourceText.textContent = displaySurfaceLabel(actualSurface);
-    let micError = null;
-    if (els.micToggle.checked) {
-      try { state.micStream = await getMicrophoneStream(); }
-      catch (error) { micError = error; state.micStream = null; }
-    }
-    const systemTracks = state.displayStream.getAudioTracks().filter((t) => t.readyState === 'live');
-    const systemOk = systemTracks.length > 0;
-    const micOk = !!state.micStream?.getAudioTracks?.().some((t) => t.readyState === 'live');
-    setIndicator(els.systemIndicator, els.systemStatus, systemOk, systemOk
-      ? `Звук встречи: подключён${systemTracks[0].label ? ` · ${systemTracks[0].label}` : ''}`
-      : 'Звук встречи: НЕ ПЕРЕДАН браузером');
-    setIndicator(els.micIndicator, els.micStatus, els.micToggle.checked ? micOk : null,
-      !els.micToggle.checked ? 'Микрофон: выключен' : micOk ? 'Микрофон: подключён' : mediaErrorMessage(micError, 'Микрофон'));
-    if (!systemOk && !micOk) {
+    const systemTracks = state.displayStream.getAudioTracks().filter((track) => track.readyState === 'live');
+    if (!systemTracks.length || videoTrack?.readyState !== 'live') {
       stopMediaStream(state.displayStream);
-      stopMediaStream(state.micStream);
       state.displayStream = null;
-      state.micStream = null;
-      setCaptureStatus('error', 'ИСТОЧНИКИ БЕЗ ЗВУКА');
-      showNoSystemAudioHelp(actualSurface, micError);
+      setCaptureStatus('error', 'ЗВУК ВСТРЕЧИ НЕ ПЕРЕДАН');
+      setIndicator(els.systemIndicator, els.systemStatus, false, 'Звук встречи: аудиодорожка отсутствует');
+      setIndicator(els.micIndicator, els.micStatus, null, 'Микрофон: не подключался');
+      showNoSystemAudioHelp(actualSurface, null);
+      showToast('Захват не начат: браузер не передал звук встречи.', 'error', 6200);
       return;
     }
-    if (!systemOk) showNoSystemAudioHelp(actualSurface, micError, true);
+    let micError = null;
+    if (els.micToggle.checked) {
+      let micWaitDone = false;
+      let timeoutId;
+      const micRequest = getMicrophoneStream().then(
+        (stream) => { if (micWaitDone) { stopMediaStream(stream); return null; } return stream; },
+        (error) => { if (micWaitDone) return null; throw error; },
+      );
+      try {
+        state.micStream = await Promise.race([
+          micRequest,
+          new Promise((resolve) => { timeoutId = setTimeout(() => { micError = new Error('Ожидание разрешения на микрофон превысило 8 секунд'); resolve(null); }, 8000); }),
+        ]);
+      } catch (error) {
+        micError = error;
+        state.micStream = null;
+      } finally {
+        micWaitDone = true;
+        clearTimeout(timeoutId);
+      }
+    }
+    const micOk = !!state.micStream?.getAudioTracks?.().some((track) => track.readyState === 'live');
+    setIndicator(els.systemIndicator, els.systemStatus, true, systemTracks.every((track) => track.muted)
+      ? 'Звук встречи: дорожка есть, пока без сигнала'
+      : 'Звук встречи: аудиодорожка подключена');
+    setIndicator(els.micIndicator, els.micStatus, els.micToggle.checked ? micOk : null,
+      !els.micToggle.checked ? 'Микрофон: выключен' : micOk ? 'Микрофон: подключён' : `Микрофон: не подключён (${micError?.message || 'нет доступа'})`);
+    if (els.micToggle.checked && !micOk) {
+      showCaptureDiagnostic('Микрофон не подключён', 'Звук встречи будет записан, но твой голос с микрофона — нет. Проверь разрешение, если нужны оба источника.', { retryTab: false, testMic: true });
+    }
     const recordStream = await buildAudioMix(state.displayStream, state.micStream);
     const mimeType = chooseRecorderMime();
     state.captureChunks = [];
@@ -242,11 +259,44 @@
     recorder.start(1000);
     state.captureStartedAt = Date.now();
     startTimer('capture');
-    setCaptureStatus(systemOk ? 'recording' : 'warning', systemOk ? 'ИДЁТ ЗАПИСЬ' : 'ЗАПИСЬ ТОЛЬКО С МИКРОФОНА');
+    setCaptureStatus('recording', micOk || !els.micToggle.checked ? 'ИДЁТ ЗАПИСЬ' : 'ЗАПИСЬ ВСТРЕЧИ · БЕЗ МИКРОФОНА');
     els.startCaptureBtn.classList.add('hidden');
     els.stopCaptureBtn.classList.remove('hidden');
-    videoTrack?.addEventListener('ended', () => stopCapture(), { once: true });
-    showToast(systemOk ? 'Захват звука начат' : 'Системный звук не получен — пишется только микрофон', systemOk ? 'ok' : 'error', 4200);
+    safeStorageSet('speechlab.lastSurface', actualSurface);
+    els.lastSourceText.textContent = displaySurfaceLabel(actualSurface);
+    videoTrack?.addEventListener('ended', () => {
+      if (!state.captureRecorder) return;
+      state.captureRecordingError = 'Демонстрация экрана завершилась';
+      stopCapture();
+    }, { once: true });
+    systemTracks.forEach((track) => {
+      track.addEventListener('ended', () => {
+        if (!state.captureRecorder) return;
+        state.captureRecordingError = 'Звуковая дорожка встречи завершилась';
+        stopCapture();
+      }, { once: true });
+      track.addEventListener('mute', () => {
+        if (state.captureRecorder?.state !== 'recording') return;
+        setCaptureStatus('warning', 'ЗВУК ВСТРЕЧИ ПРЕРВАН');
+        setIndicator(els.systemIndicator, els.systemStatus, false, 'Звук встречи: источник временно без сигнала');
+        showCaptureDiagnostic('Системное аудио прервано', 'Браузер перестал передавать звук. Проверь «Поделиться аудио».', { retryTab: false, testMic: false });
+      });
+      track.addEventListener('unmute', () => {
+        if (state.captureRecorder?.state !== 'recording') return;
+        setCaptureStatus('recording', 'ИДЁТ ЗАПИСЬ');
+        setIndicator(els.systemIndicator, els.systemStatus, true, 'Звук встречи: аудиодорожка восстановлена');
+        if (els.captureDiagnosticTitle.textContent === 'Системное аудио прервано') hideCaptureDiagnostic();
+      });
+    });
+    state.micStream?.getAudioTracks().forEach((track) => {
+      track.addEventListener('ended', () => {
+        if (state.captureRecorder?.state !== 'recording') return;
+        setIndicator(els.micIndicator, els.micStatus, false, 'Микрофон отключился; звук встречи продолжается');
+        showCaptureDiagnostic('Микрофон отключился', 'Звук встречи продолжает записываться, но твой микрофон больше недоступен.', { retryTab: false, testMic: false });
+      }, { once: true });
+    });
+    showToast(micOk || !els.micToggle.checked ? 'Захват звука встречи начат' : 'Звук встречи записывается БЕЗ микрофона',
+      micOk || !els.micToggle.checked ? 'ok' : 'error', 4200);
   } catch (error) {
     stopTimer('capture');
     stopMediaStream(state.displayStream);
@@ -287,10 +337,17 @@
   const systemTracks = (displayStream?.getAudioTracks?.() || []).filter((track) => track.readyState === 'live');
   const micTracks = (micStream?.getAudioTracks?.() || []).filter((track) => track.readyState === 'live');
   if (!systemTracks.length && !micTracks.length) throw new Error('Нет доступных аудиодорожек для записи.');
+  if (systemTracks.length + micTracks.length === 1) return new MediaStream([...systemTracks, ...micTracks]);
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return new MediaStream([...systemTracks, ...micTracks]);
+  if (!AudioContextClass) throw new Error('Нужен Web Audio API для объединения микрофона и системного звука.');
   state.mixContext = new AudioContextClass();
-  await state.mixContext.resume();
+  let resumeTimeout;
+  try {
+    await Promise.race([
+      state.mixContext.resume(),
+      new Promise((_, reject) => { resumeTimeout = setTimeout(() => reject(new Error('Аудиомикшер не запустился за 5 секунд.')), 5000); }),
+    ]);
+  } finally { clearTimeout(resumeTimeout); }
   if (state.mixContext.state !== 'running') throw new Error('Аудиомикшер не запустился. Проверь разрешение воспроизведения в браузере.');
   state.mixDestination = state.mixContext.createMediaStreamDestination();
   if (systemTracks.length) {
