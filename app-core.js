@@ -328,6 +328,7 @@
   setCaptureStatus('working', 'ЗАВЕРШАЮ ЗАПИСЬ…');
   try {
     if (state.captureRecorder.state !== 'inactive') state.captureRecorder.stop();
+    else void finishCaptureRecording();
   } catch (error) {
     state.captureRecordingError = error?.message || String(error);
     void finishCaptureRecording();
@@ -441,6 +442,7 @@
   els.dictaphoneStatusText.textContent = 'ЗАВЕРШАЮ ЗАПИСЬ…';
   try {
     if (state.dictaphoneRecorder.state !== 'inactive') state.dictaphoneRecorder.stop();
+    else void finishDictaphone();
   } catch (error) {
     state.dictaphoneRecordingError = error?.message || String(error);
     void finishDictaphone();
@@ -592,7 +594,7 @@
     } else if (p.quality === 'fast') {
       modelName = 'Whisper Tiny';
     } else if (p.quality === 'accurate' || p.quality === 'max') {
-      modelName = hasGpu ? 'Whisper Large-v3-Turbo' : 'Whisper Small / Base fallback';
+      modelName = hasGpu ? 'Whisper Large-v3-Turbo / Small fallback' : 'Whisper Base';
     } else if (p.quality === 'balanced' || p.quality === 'noisy') {
       modelName = hasGpu ? 'Whisper Small' : 'Whisper Base';
     } else {
