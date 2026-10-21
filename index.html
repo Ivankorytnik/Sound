@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://cdn.sheetjs.com" crossorigin />
   <link rel="preconnect" href="https://huggingface.co" crossorigin />
-  <link rel="stylesheet" href="./styles.css?build=inline-switches-20261021-01" />
+  <link rel="stylesheet" href="./styles.css?build=dictaphone-toolbar-20261021-01" />
 </head>
 <body>
   <main class="shell">
@@ -265,26 +265,29 @@
             </div>
           </div>
 
-          <div class="capture-actions">
-            <button class="primary-btn" id="startDictaphoneBtn" type="button">
-              <span>НАЧАТЬ ЗАПИСЬ</span>
-              <span class="arrow">●</span>
-            </button>
-            <button class="danger-btn hidden" id="stopDictaphoneBtn" type="button">
-              <span>ОСТАНОВИТЬ</span>
-              <span>■</span>
-            </button>
-          </div>
+          <div class="dictaphone-toolbar" id="dictaphoneToolbar">
+            <div class="capture-actions">
+              <button class="primary-btn" id="startDictaphoneBtn" type="button">
+                <span>НАЧАТЬ ЗАПИСЬ</span>
+                <span class="arrow">●</span>
+              </button>
+              <button class="danger-btn hidden" id="stopDictaphoneBtn" type="button">
+                <span>ОСТАНОВИТЬ</span>
+                <span>■</span>
+              </button>
+            </div>
 
-          <details class="capture-help">
-            <summary>КАК ИСПОЛЬЗОВАТЬ</summary>
-            <ol>
-              <li>Разреши браузеру доступ к микрофону.</li>
-              <li>Нажми «Начать запись» и говори.</li>
-              <li>Нажми «Остановить».</li>
-              <li>При включённом авто-режиме Whisper сразу создаст текст.</li>
-            </ol>
-          </details>
+            <details class="capture-help">
+              <summary>КАК ИСПОЛЬЗОВАТЬ</summary>
+              <ol>
+                <li>Разреши браузеру доступ к микрофону.</li>
+                <li>Нажми «Начать запись» и говори.</li>
+                <li>Нажми «Остановить».</li>
+                <li>При включённом авто-режиме Whisper сразу создаст текст.</li>
+              </ol>
+            </details>
+            <div class="dictaphone-folder-slot" id="dictaphoneSaveFolderSlot"></div>
+          </div>
         </section>
 
         <section class="mode-section hidden" id="fileMode">
@@ -426,6 +429,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script defer src="./app.js?build=v1.6.5-20261021-01"></script>
+  <script defer src="./app.js?build=dictaphone-toolbar-20261021-01"></script>
 </body>
 </html>
