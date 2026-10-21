@@ -1,11 +1,6 @@
 (() => {
   'use strict';
 
-  const nativeCreateObjectURL = URL.createObjectURL.bind(URL);
-  const nativeRevokeObjectURL = URL.revokeObjectURL.bind(URL);
-  const nativeAnchorClick = HTMLAnchorElement.prototype.click;
-  const blobByUrl = new Map();
-
   let selectedDirectory = null;
   let folderStatusEl = null;
   let folderButtonEl = null;
@@ -17,7 +12,7 @@
     toast.classList.toggle('error', type === 'error');
     toast.classList.add('show');
     clearTimeout(showFolderToast.timer);
-    showFolderToast.timer = setTimeout(() => toast.classList.remove('show'), 3200);
+    showFolderToast.timer = setTimeout(() => toast.classList.remove('show'), 3500);
   }
 
   function setFolderStatus(text, kind = 'idle') {
@@ -27,21 +22,16 @@
   }
 
   function sanitizeFileName(name) {
-    const cleaned = String(name || 'file')
-      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
-      .replace(/[. ]+$/g, '')
-      .slice(0, 180);
-    return cleaned || 'file';
+    return String(name || 'file').replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').replace(/[. ]+$/g, '').slice(0, 180) || 'file';
   }
 
   async function ensureWritePermission(handle) {
     if (!handle) return false;
     if (typeof handle.queryPermission !== 'function') return true;
-    let permission = await handle.queryPermission({ mode: 'readwrite' });
+    const options = { mode: 'readwrite' };
+    let permission = await handle.queryPermission(options);
     if (permission === 'granted') return true;
-    if (typeof handle.requestPermission === 'function') {
-      permission = await handle.requestPermission({ mode: 'readwrite' });
-    }
+    if (typeof handle.requestPermission === 'function') permission = await handle.requestPermission(options);
     return permission === 'granted';
   }
 
@@ -50,12 +40,10 @@
     const dot = safeName.lastIndexOf('.');
     const base = dot > 0 ? safeName.slice(0, dot) : safeName;
     const ext = dot > 0 ? safeName.slice(dot) : '';
-
     for (let i = 0; i < 1000; i += 1) {
-      const candidate = i === 0 ? safeName : `${base} (${i})${ext}`;
-      try {
-        await directory.getFileHandle(candidate);
-      } catch (error) {
+      const candidate = i ? `${base} (${i})${ext}` : safeName;
+      try { await directory.getFileHandle(candidate); }
+      catch (error) {
         if (error?.name === 'NotFoundError') return candidate;
         throw error;
       }
@@ -63,62 +51,43 @@
     return `${base}_${Date.now()}${ext}`;
   }
 
-  async function saveBlobToFolder(blob, requestedName) {
-    if (!selectedDirectory) throw new Error('Папка не выбрана');
-    const allowed = await ensureWritePermission(selectedDirectory);
-    if (!allowed) throw new Error('Нет разрешения на запись в выбранную папку');
-
-    const fileName = await pickAvailableFileName(selectedDirectory, requestedName);
-    const fileHandle = await selectedDirectory.getFileHandle(fileName, { create: true });
-    const writable = await fileHandle.createWritable();
-    try {
-      await writable.write(blob);
-    } finally {
-      await writable.close();
-    }
-
-    setFolderStatus(`Сохранено: ${fileName}`, 'ok');
-    showFolderToast(`Файл сохранён в папку «${selectedDirectory.name}»`);
-  }
-
   function fallbackDownload(blob, fileName) {
-    const url = nativeCreateObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = sanitizeFileName(fileName);
     document.body.appendChild(anchor);
-    nativeAnchorClick.call(anchor);
+    anchor.click();
     anchor.remove();
-    setTimeout(() => nativeRevokeObjectURL(url), 1200);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
-  URL.createObjectURL = function createObjectURL(blob) {
-    const url = nativeCreateObjectURL(blob);
-    if (blob instanceof Blob) blobByUrl.set(url, blob);
-    return url;
-  };
+  async function saveBlobToFolder(blob, requestedName) {
+    if (!selectedDirectory) return fallbackDownload(blob, requestedName);
+    let writable = null;
+    let completed = false;
+    let fileName;
+    try {
+      if (!await ensureWritePermission(selectedDirectory)) throw new Error('Нет разрешения на запись');
+      fileName = await pickAvailableFileName(selectedDirectory, requestedName);
+      const fileHandle = await selectedDirectory.getFileHandle(fileName, { create: true });
+      writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      completed = true;
+      setFolderStatus(`Сохранено: ${fileName}`, 'ok');
+      showFolderToast(`Сохранено в папку «${selectedDirectory.name}»`);
+    } catch (error) {
+      if (writable && !completed) { try { await writable.abort(); } catch {} }
+      setFolderStatus(`Ошибка сохранения: ${error?.message || 'неизвестная ошибка'}`, 'error');
+      showFolderToast('Сохранение в папку не удалось. Открываю обычную загрузку.', 'error');
+      fallbackDownload(blob, requestedName);
+    }
+  }
 
-  URL.revokeObjectURL = function revokeObjectURL(url) {
-    setTimeout(() => {
-      blobByUrl.delete(url);
-      nativeRevokeObjectURL(url);
-    }, 1800);
-  };
-
-  HTMLAnchorElement.prototype.click = function patchedAnchorClick(...args) {
-    const href = this.href || '';
-    const fileName = this.download || '';
-    const blob = selectedDirectory && fileName && href.startsWith('blob:') ? blobByUrl.get(href) : null;
-
-    if (!blob) return nativeAnchorClick.apply(this, args);
-
-    saveBlobToFolder(blob, fileName).catch((error) => {
-      setFolderStatus(`Не удалось сохранить в папку: ${error?.message || 'ошибка'}`, 'error');
-      showFolderToast('Не удалось сохранить в выбранную папку. Файл будет скачан обычным способом.', 'error');
-      fallbackDownload(blob, fileName);
-    });
-    return undefined;
-  };
+  // Do not override global browser APIs or anchor clicks: only Speech Lab
+  // downloads are intercepted, including the Excel export.
+  window.SpeechLabFiles = Object.freeze({ save: saveBlobToFolder });
 
   function injectStyles() {
     const style = document.createElement('style');
