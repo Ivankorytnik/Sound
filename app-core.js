@@ -337,10 +337,17 @@
   const systemTracks = (displayStream?.getAudioTracks?.() || []).filter((track) => track.readyState === 'live');
   const micTracks = (micStream?.getAudioTracks?.() || []).filter((track) => track.readyState === 'live');
   if (!systemTracks.length && !micTracks.length) throw new Error('Нет доступных аудиодорожек для записи.');
+  if (systemTracks.length + micTracks.length === 1) return new MediaStream([...systemTracks, ...micTracks]);
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return new MediaStream([...systemTracks, ...micTracks]);
+  if (!AudioContextClass) throw new Error('Нужен Web Audio API для объединения микрофона и системного звука.');
   state.mixContext = new AudioContextClass();
-  await state.mixContext.resume();
+  let resumeTimeout;
+  try {
+    await Promise.race([
+      state.mixContext.resume(),
+      new Promise((_, reject) => { resumeTimeout = setTimeout(() => reject(new Error('Аудиомикшер не запустился за 5 секунд.')), 5000); }),
+    ]);
+  } finally { clearTimeout(resumeTimeout); }
   if (state.mixContext.state !== 'running') throw new Error('Аудиомикшер не запустился. Проверь разрешение воспроизведения в браузере.');
   state.mixDestination = state.mixContext.createMediaStreamDestination();
   if (systemTracks.length) {
