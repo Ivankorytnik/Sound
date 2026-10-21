@@ -1,4 +1,4 @@
-import { createResilientTranscriber, readableEngineError } from './transcription-runtime.js?build=v1.6.3-20261015-02';
+import { createResilientTranscriber, readableEngineError } from './transcription-runtime.js?build=v1.6.4-20261021-01';
 
 const activeSessions = new Map();
 let activeJobId = null;
