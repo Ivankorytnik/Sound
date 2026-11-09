@@ -19,9 +19,13 @@ jobs:
           node --check transcription-engine.js
           node --check transcription-runtime.js
           node --check transcription-worker.js
+          node --check video.js
+          node --check video-ffmpeg-worker.js
       - name: Install browser and Playwright
         run: |
           python -m pip install playwright
           python -m playwright install --with-deps chromium
       - name: Browser smoke test
-        run: python smoke_test.py
+        run: |
+          python smoke_test.py
+          python video_smoke_test.py
