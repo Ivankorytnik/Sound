@@ -10,7 +10,7 @@ jobs:
       - name: Check published URLs
         shell: bash
         run: |
-          for url in https://korytnikhub.pro/sound/ https://korytnikhub.pro/sound/video.html https://korytnikhub.pro/Sound/video.html https://ivankorytnik.github.io/Sound/video.html https://ivankorytnik.github.io/sound/video.html https://korytnikhub.pro/; do
+          for url in https://korytnikhub.pro/sound/ https://korytnikhub.pro/sound/video.html https://korytnikhub.pro/sound/video.js https://korytnikhub.pro/sound/video.css https://korytnikhub.pro/sound/video-ffmpeg-worker.js https://korytnikhub.pro/Sound/video.html https://ivankorytnik.github.io/Sound/video.html https://ivankorytnik.github.io/sound/video.html https://korytnikhub.pro/; do
             echo "===== $url ====="
             curl -sS -L -o /tmp/response-page -w 'HTTP %{http_code} FINAL %{url_effective} TYPE %{content_type}\n' --max-time 20 "$url" || true
             grep -oiE '<title>[^<]+|<h1>[^<]+' /tmp/response-page | head -n 3 || true
