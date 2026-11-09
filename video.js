@@ -147,8 +147,8 @@
     // Worker wrapper is same-origin; its ESM dependency is served by a CORS CDN.
     await ffmpeg.load({
       classWorkerURL: new URL('./video-ffmpeg-worker.js', location.href).href,
-      coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js',
-      wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm',
+      coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.js',
+      wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.wasm',
     });
     if (!isCurrent()) return null;
     report(12, 'ЗАГРУЖАЮ ВИДЕО', 'Подготавливаю файл в локальной памяти браузера…');
