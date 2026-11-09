@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>Видео в текст — Speech Lab</title>
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="./styles.css?build=video-isolated-20261109" />
+  <link rel="stylesheet" href="./video.css?build=video-isolated-20261109" />
+</head>
+<body>
+  <main class="shell video-page">
+    <header class="video-topbar">
+      <div class="video-title-group">
+        <a class="video-back" href="./" aria-label="Вернуться в Speech Lab">← ВСЕ РЕЖИМЫ SPEECH LAB</a>
+        <div class="video-kicker">LOCAL AI · ОТДЕЛЬНАЯ ФУНКЦИЯ</div>
+        <h1>ВИДЕО <span>→ ТЕКСТ</span></h1>
+        <p>Загрузи видео, распознай речь и скачай стенограмму. Диктофон, встречи и обычные аудиофайлы работают независимо.</p>
+      </div>
+      <div class="video-local-badge">● ЛОКАЛЬНАЯ ОБРАБОТКА</div>
+    </header>
+
+    <div class="video-grid">
+      <section class="video-panel video-input-panel" aria-label="Загрузка видео">
+        <div class="video-panel-heading"><span>01</span><h2>ЗАГРУЗКА ВИДЕО</h2></div>
+        <label class="video-drop" id="videoDrop" for="videoFile">
+          <input type="file" id="videoFile" accept="video/*,.mp4,.mov,.mkv,.webm,.avi,.m4v" />
+          <span class="video-drop-icon" aria-hidden="true">＋</span>
+          <strong>ВЫБРАТЬ ВИДЕОФАЙЛ</strong>
+          <span>или перетащи видео сюда</span>
+          <small>MP4 · MOV · MKV · WEBM · AVI · M4V</small>
+        </label>
+        <div class="video-file-details" id="videoFileDetails" hidden>
+          <div>
+            <div class="video-field-label">ВЫБРАННЫЙ ФАЙЛ</div>
+            <strong id="videoFileName">—</strong>
+            <small id="videoFileMeta">—</small>
+          </div>
+          <button type="button" id="videoClearButton" class="video-clear" aria-label="Убрать выбранное видео">×</button>
+        </div>
+        <div id="videoPreviewWrap" class="video-preview-wrap" hidden>
+          <video id="videoPreview" controls preload="metadata" playsinline aria-label="Просмотр выбранного видео"></video>
+        </div>
+
+        <div class="video-options">
+          <label>
+            <span>ЯЗЫК РЕЧИ</span>
+            <select id="videoLanguage">
+              <option value="russian" selected>Русский</option>
+              <option value="auto">Определить автоматически</option>
+              <option value="english">Английский</option>
+            </select>
+          </label>
+          <label>
+            <span>КАЧЕСТВО</span>
+            <select id="videoQuality">
+              <option value="balanced" selected>Баланс · рекомендуется</option>
+              <option value="accurate">Точно · дольше</option>
+              <option value="fast">Быстро · черновик</option>
+            </select>
+          </label>
+        </div>
+
+        <button type="button" class="video-start" id="videoStartBtn" disabled>
+          <span id="videoStartLabel">РАСПОЗНАТЬ ВИДЕО</span><span aria-hidden="true">↗</span>
+        </button>
+
+        <div class="video-progress" id="videoProgress" role="status" aria-live="polite" hidden>
+          <div class="video-progress-line"><strong id="videoStatus">ПОДГОТОВКА</strong><strong id="videoProgressValue">0%</strong></div>
+          <div class="video-progress-track"><div id="videoProgressBar"></div></div>
+          <p id="videoStatusNote">Обработка начинается после нажатия кнопки.</p>
+        </div>
+        <p class="video-error" id="videoError" role="alert" hidden></p>
+
+        <div class="video-privacy">
+          <strong>ЛОКАЛЬНО · БЕЗ ЗАГРУЗКИ ВИДЕО НА СЕРВЕР</strong>
+          <p>Аудиодорожка извлекается из видео на твоём устройстве и распознаётся существующим Whisper-движком. При первом запуске браузер скачает FFmpeg и AI-модель из внешних библиотек. Исходное видео и его звук никуда не загружаются.</p>
+        </div>
+        <p class="video-limit">Лимит: до 300 МБ и до 90 минут аудио. Для больших файлов может потребоваться разделить видео на части. Скорость зависит от компьютера.</p>
+      </section>
+
+      <section class="video-panel video-output-panel" aria-label="Распознанный текст">
+        <div class="video-panel-heading"><span>02</span><h2>РЕЗУЛЬТАТ</h2></div>
+        <div class="video-empty" id="videoEmpty">
+          <div class="video-empty-symbol" aria-hidden="true">▥</div>
+          <strong>Здесь появится текст из видео</strong>
+          <p>После обработки его можно отредактировать, скопировать, сохранить в TXT или экспортировать субтитры SRT с таймкодами.</p>
+        </div>
+        <div id="videoResult" class="video-result" hidden>
+          <div class="video-stats">
+            <div><span>СЛОВ</span><strong id="videoWordCount">0</strong></div>
+            <div><span>ДЛИТЕЛЬНОСТЬ</span><strong id="videoDuration">—</strong></div>
+            <div><span>СЕГМЕНТОВ</span><strong id="videoSegmentCount">0</strong></div>
+          </div>
+          <label class="video-transcript-label" for="videoText">РАСШИФРОВКА · ТЕКСТ МОЖНО РЕДАКТИРОВАТЬ</label>
+          <textarea id="videoText" spellcheck="true" placeholder="Расшифровка видео появится здесь…"></textarea>
+          <div class="video-actions">
+            <button type="button" id="videoCopy" disabled>СКОПИРОВАТЬ</button>
+            <button type="button" id="videoTxt" disabled>СКАЧАТЬ .TXT</button>
+            <button type="button" id="videoSrt" disabled>СКАЧАТЬ .SRT</button>
+          </div>
+          <p class="video-hint">TXT сохраняет текущий текст с твоими правками. SRT формируется из автоматических сегментов распознавания и их таймкодов.</p>
+        </div>
+      </section>
+    </div>
+    <footer class="video-footer">
+      <span>Speech Lab · Видео в текст</span>
+      <span>Отдельный модуль · исходные режимы не изменены</span>
+    </footer>
+  </main>
+  <script defer src="./video.js?build=video-isolated-20261109"></script>
+</body>
+</html>
