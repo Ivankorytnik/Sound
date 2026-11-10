@@ -71,3 +71,15 @@
 .video-footer { display:flex; justify-content:space-between; gap:12px; color:var(--muted-2); font-size:11px; margin-top:30px; }
 @media (max-width:900px) { .video-grid { grid-template-columns:1fr; } .video-output-panel { min-height:0; } .video-empty { min-height:200px; } .video-topbar { flex-wrap:wrap; } }
 @media (max-width:520px) { .video-page { width:calc(100% - 24px); } .video-panel { padding:18px; border-radius:17px; } .video-topbar { padding:10px 0 20px; gap:15px; } .video-back { margin-bottom:16px; } .video-options { grid-template-columns:1fr; } .video-actions { grid-template-columns:1fr; } .video-stats strong { font-size:14px; } .video-footer { flex-direction:column; } }
+/* Video 1.1: compact source and download controls, existing design retained. */
+.video-source-tabs, .video-url-row { display: flex; gap: 8px; margin: 12px 0; }
+.video-source-tabs button, .video-url-row button, .video-cancel { padding: 10px 12px; border: 1px solid var(--line, #34434b); border-radius: 10px; background: #161e24; color: #e5f4f8; font: inherit; cursor: pointer; }
+.video-source-tabs button[aria-pressed="true"] { border-color: #55e9e0; color: #55e9e0; }
+.video-url-row input { width: 100%; min-width: 0; padding: 12px; border: 1px solid #34434b; border-radius: 10px; background: #0b1117; color: #e5f4f8; font: inherit; }
+.video-url-row button { flex-shrink: 0; }
+.video-media-actions { margin: 12px 0 6px; }
+#videoAudioPreview { width: 100%; margin: 10px 0; }
+.video-cancel { width: 100%; margin-top: 10px; }
+.video-page button:disabled { cursor: not-allowed; opacity: .5; }
+.video-page [hidden] { display: none !important; }
+@media (max-width: 560px) { .video-url-row { flex-direction: column; } }
