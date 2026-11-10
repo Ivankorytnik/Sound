@@ -85,6 +85,31 @@ try:
             page.locator("#videoSrt").click()
         download = download_info.value
         assert download.suggested_filename.endswith(".srt")
+        # Actual MP3/M4A encoding in ffmpeg.wasm; inspect both downloads using ffprobe.
+        for audio_format in ('mp3', 'm4a'):
+            page.select_option('#videoAudioFormat', audio_format)
+            with page.expect_download(timeout=180_000) as result:
+                page.click('#videoDownloadAudio')
+            download = result.value
+            output_path = ROOT / ('_video_ci_audio.' + audio_format)
+            try:
+                download.save_as(str(output_path))
+                probe = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+                                        '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', str(output_path)],
+                                       capture_output=True, text=True, check=True)
+                assert probe.stdout.strip() == ('mp3' if audio_format == 'mp3' else 'aac'), probe.stdout
+            finally:
+                output_path.unlink(missing_ok=True)
+            assert page.locator('#videoAudioPreview').is_visible()
+        # Cached PCM survives worker transfer and supports another transcription.
+        page.click('#videoStartBtn')
+        page.wait_for_function("() => document.querySelector('#videoStatus').textContent === 'ГОТОВО'")
+        assert page.evaluate('window.__decodedSamples') >= 30_000
+        page.fill('#videoText', 'Правки пользователя')
+        with page.expect_download() as result: page.click('#videoTxt')
+        assert 'Правки пользователя' in pathlib.Path(result.value.path()).read_text(encoding='utf-8-sig')
+        with page.expect_download() as result: page.click('#videoSrt')
+        assert 'Тестовая транскрибация видео' in pathlib.Path(result.value.path()).read_text(encoding='utf-8-sig')
         assert page.locator("#videoError").is_hidden()
         assert not errors, errors
         print("Video decode/ASR handoff/download E2E: PASS")

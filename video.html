@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#0b0d10" />
   <title>Видео в текст — Speech Lab</title>
   <link rel="icon" href="./favicon.ico" sizes="any" />
-  <link rel="stylesheet" href="./styles.css?build=video-isolated-20261109" />
-  <link rel="stylesheet" href="./video.css?build=video-isolated-20261109" />
+  <link rel="stylesheet" href="./styles.css?build=video-1.1-20261110" />
+  <link rel="stylesheet" href="./video.css?build=video-1.1-20261110" />
 </head>
 <body>
   <main class="shell video-page">
     <header class="video-topbar">
       <div class="video-title-group">
         <a class="video-back" href="./" aria-label="Вернуться в Speech Lab">← ВСЕ РЕЖИМЫ SPEECH LAB</a>
-        <div class="video-kicker">LOCAL AI · ОТДЕЛЬНАЯ ФУНКЦИЯ</div>
+        <div class="video-kicker">LOCAL AI · МОДУЛЬ ВИДЕО 1.1</div>
         <h1>ВИДЕО <span>→ ТЕКСТ</span></h1>
-        <p>Загрузи видео, распознай речь и скачай стенограмму. Диктофон, встречи и обычные аудиофайлы работают независимо.</p>
+        <p>Загрузи видео или вставь прямую ссылку. Скачай видео, аудио или распознай речь. Диктофон, встречи и обычные аудиофайлы работают независимо.</p>
       </div>
       <div class="video-local-badge">● ЛОКАЛЬНАЯ ОБРАБОТКА</div>
     </header>
@@ -24,6 +24,18 @@
     <div class="video-grid">
       <section class="video-panel video-input-panel" aria-label="Загрузка видео">
         <div class="video-panel-heading"><span>01</span><h2>ЗАГРУЗКА ВИДЕО</h2></div>
+        <div class="video-source-tabs" role="group" aria-label="Источник видео">
+          <button type="button" id="videoSourceFile" aria-pressed="true">Загрузить файл</button>
+          <button type="button" id="videoSourceUrl" aria-pressed="false">Вставить ссылку</button>
+        </div>
+        <div id="videoUrlPanel" hidden>
+          <label class="video-transcript-label" for="videoSourceInput">ПРЯМАЯ ССЫЛКА НА ВИДЕО</label>
+          <div class="video-url-row">
+            <input id="videoSourceInput" type="url" placeholder="https://example.ru/video.mp4" autocomplete="off" spellcheck="false" />
+            <button type="button" id="videoCheckUrl">Проверить ссылку</button>
+          </div>
+          <p class="video-hint">Работают прямые ссылки, если источник разрешает загрузку из браузера. Для VK Видео, Rutube и YouTube серверный обработчик пока не подключён. Ссылки с паролем, закрытые записи, эфиры и плейлисты не поддерживаются.</p>
+        </div>
         <label class="video-drop" id="videoDrop" for="videoFile">
           <input type="file" id="videoFile" accept="video/*,.mp4,.mov,.mkv,.webm,.avi,.m4v" />
           <span class="video-drop-icon" aria-hidden="true">＋</span>
@@ -43,6 +55,18 @@
           <video id="videoPreview" controls preload="metadata" playsinline aria-label="Просмотр выбранного видео"></video>
         </div>
 
+        <div id="videoMediaOptions" hidden>
+          <div class="video-options">
+            <label><span>КАЧЕСТВО ВИДЕО</span><select id="videoDownloadQuality"><option>Исходное качество</option></select></label>
+            <label><span>ФОРМАТ АУДИО</span><select id="videoAudioFormat"><option value="mp3">MP3</option><option value="m4a">M4A</option></select></label>
+          </div>
+          <div class="video-actions video-media-actions">
+            <button type="button" id="videoDownloadVideo" disabled>СКАЧАТЬ ВИДЕО</button>
+            <button type="button" id="videoDownloadAudio" disabled>СКАЧАТЬ АУДИО</button>
+          </div>
+          <p class="video-hint" id="videoAudioHint">Наличие аудиодорожки проверяется при обработке файла.</p>
+          <audio id="videoAudioPreview" controls preload="metadata" hidden aria-label="Прослушать подготовленное аудио"></audio>
+        </div>
         <div class="video-options">
           <label>
             <span>ЯЗЫК РЕЧИ</span>
@@ -66,6 +90,7 @@
           <span id="videoStartLabel">РАСПОЗНАТЬ ВИДЕО</span><span aria-hidden="true">↗</span>
         </button>
 
+        <button type="button" id="videoCancel" class="video-cancel" hidden>ОТМЕНИТЬ</button>
         <div class="video-progress" id="videoProgress" role="status" aria-live="polite" hidden>
           <div class="video-progress-line"><strong id="videoStatus">ПОДГОТОВКА</strong><strong id="videoProgressValue">0%</strong></div>
           <div class="video-progress-track"><div id="videoProgressBar"></div></div>
@@ -77,7 +102,7 @@
           <strong>ЛОКАЛЬНО · БЕЗ ЗАГРУЗКИ ВИДЕО НА СЕРВЕР</strong>
           <p>Аудиодорожка извлекается из видео на твоём устройстве и распознаётся существующим Whisper-движком. При первом запуске браузер скачает FFmpeg и AI-модель из внешних библиотек. Исходное видео и его звук никуда не загружаются.</p>
         </div>
-        <p class="video-limit">Лимит: до 300 МБ и до 90 минут аудио. Для больших файлов может потребоваться разделить видео на части. Скорость зависит от компьютера.</p>
+        <p class="video-limit">Лимит: до 300 МБ и до 90 минут аудио. Для больших файлов может потребоваться разделить видео на части. Скорость зависит от компьютера. Обработка выполняется на вашем устройстве.</p>
       </section>
 
       <section class="video-panel video-output-panel" aria-label="Распознанный текст">
@@ -100,7 +125,7 @@
             <button type="button" id="videoTxt" disabled>СКАЧАТЬ .TXT</button>
             <button type="button" id="videoSrt" disabled>СКАЧАТЬ .SRT</button>
           </div>
-          <p class="video-hint">TXT сохраняет текущий текст с твоими правками. SRT формируется из автоматических сегментов распознавания и их таймкодов.</p>
+          <p class="video-hint">TXT сохраняет текущий текст с твоими правками. SRT формируется из автоматических сегментов распознавания и их таймкодов. Правки общего текста автоматически не переносятся в SRT.</p>
         </div>
       </section>
     </div>
@@ -109,6 +134,7 @@
       <span>Отдельный модуль · исходные режимы не изменены</span>
     </footer>
   </main>
-  <script defer src="./video.js?build=video-isolated-20261109"></script>
+  <script defer src="./video-source.js?build=video-1.1-20261110"></script>
+  <script defer src="./video.js?build=video-1.1-20261110"></script>
 </body>
 </html>
