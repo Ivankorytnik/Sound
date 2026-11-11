@@ -91,6 +91,7 @@ try:
         page.on('dialog', lambda dialog: dialog.accept())
         page.add_init_script(SETUP)
         page.goto(URL)
+        (ROOT / 'screenshots').mkdir(exist_ok=True)
         page.click('#videoSourceRecord')
         assert page.locator('#videoDrop').is_hidden()
         assert page.locator('#videoRecordSound').is_checked()
@@ -100,6 +101,7 @@ try:
         assert page.locator('#videoStartBtn').is_disabled()
         assert 'подключён' in page.locator('#videoRecordMicStatus').inner_text()
         assert page.evaluate('recordedStreams[0].getAudioTracks().length') == 1, 'Audio must be mixed into one track'
+        page.screenshot(path=str(ROOT / 'screenshots' / 'video-record-active.png'), full_page=True)
         page.wait_for_timeout(1300)
         page.click('#videoRecordPause')
         timer = page.locator('#videoRecordTimer').inner_text()
@@ -111,6 +113,7 @@ try:
         assert page.locator('#videoPreview').is_visible()
         assert page.locator('#videoStartBtn').is_enabled()
         assert page.locator('#videoDownloadAudio').is_enabled()
+        page.screenshot(path=str(ROOT / 'screenshots' / 'video-record-ready.png'), full_page=True)
         with page.expect_download() as info: page.click('#videoDownloadVideo')
         output = pathlib.Path(tmp) / info.value.suggested_filename
         info.value.save_as(output)

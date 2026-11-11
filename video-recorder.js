@@ -10,7 +10,7 @@
     const MAX_SECONDS = 90 * 60;
     let phase = 'idle', display = null, mic = null, context = null, mixed = null;
     let recorder = null, chunks = [], bytes = 0, timer = null, elapsed = 0, started = 0;
-    let file = null, saved = true, reason = '', hasAudio = false, processing = false;
+    let file = null, fileInfo = null, saved = true, reason = '', hasAudio = false, processing = false;
     let generation = 0;
     const supported = !!(window.isSecureContext && navigator.mediaDevices?.getDisplayMedia && window.MediaRecorder);
     const active = () => ['picking', 'recording', 'paused', 'stopping'].includes(phase);
@@ -79,6 +79,8 @@
       const parts = chunks;
       chunks = []; recorder = null;
       cleanup();
+      ui.SoundStatus.textContent = ui.SoundStatus.textContent.replace('подключён', 'записан');
+      ui.MicStatus.textContent = ui.MicStatus.textContent.replace('подключён', 'записан');
       if (!parts.length || !bytes) {
         phase = file ? 'done' : 'idle';
         ui.Note.textContent = reason || 'Запись пустая. Попробуй ещё раз.';
@@ -86,10 +88,11 @@
       }
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       file = new File(parts, 'Экран_' + stamp + (type.includes('mp4') ? '.mp4' : '.webm'), { type });
+      fileInfo = { hasAudio, duration };
       saved = false;
       phase = 'done';
       onActive(false);
-      if (file.size <= 300 * 1024 * 1024) onFile(file, { hasAudio, duration });
+      if (file.size <= 300 * 1024 * 1024) onFile(file, fileInfo);
       ui.Note.textContent = (reason ? reason + ' ' : '') + 'Запись готова. ' +
         (file.size > 300 * 1024 * 1024 ? 'Файл больше лимита обработки. Нажми «Скачать запись».' :
           hasAudio ? 'Просмотри видео, скачай его или нажми «Распознать речь».' :
@@ -212,7 +215,7 @@
     return {
       setBusy(value) { processing = value; update(); },
       markSaved(value) { if (value === file) saved = true; },
-      restore() { if (file && file.size <= 300 * 1024 * 1024) onFile(file, { hasAudio, duration: elapsed / 1000 }); },
+      restore() { if (file && file.size <= 300 * 1024 * 1024) onFile(file, fileInfo); },
     };
   };
 })();

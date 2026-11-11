@@ -208,6 +208,14 @@
     ui.recordPanel.hidden = mode !== 'record';
     ui.drop.hidden = mode !== 'file';
     ui.urlPanel.hidden = mode !== 'url';
+    // Put recording previews alongside the controls on desktop, above the result.
+    // Uploaded files keep their original source-panel layout.
+    if (mode === 'record') {
+      ui.empty.before($('videoRecordPreview'), ui.previewWrap);
+    } else {
+      ui.details.after(ui.previewWrap);
+      ui.recordPanel.append($('videoRecordPreview'));
+    }
     if (mode === 'record') capture.restore();
   }
   function readableError(error) {

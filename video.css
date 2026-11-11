@@ -101,3 +101,12 @@
 .video-panel { padding:20px; }
 .video-options { margin:14px 0; }
 @media (max-width:520px) { .video-record-settings { grid-template-columns:1fr; } .video-record-toolbar { flex-wrap:wrap; } }
+.video-output-panel:has(#videoPreviewWrap:not([hidden])) .video-empty,
+.video-output-panel:has(#videoRecordPreview:not([hidden])) .video-empty { min-height:140px; }
+.video-output-panel:has(#videoPreviewWrap:not([hidden])) .video-empty-symbol,
+.video-output-panel:has(#videoRecordPreview:not([hidden])) .video-empty-symbol { font-size:32px; }
+.video-topbar h1 { font-size:clamp(30px,3.5vw,42px); }
+.video-topbar p { font-size:13px; line-height:1.45; }
+.video-back { margin-bottom:8px; }
+.video-panel-heading { margin-bottom:15px; padding-bottom:13px; }
+.video-media-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
