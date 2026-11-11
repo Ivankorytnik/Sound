@@ -51,6 +51,19 @@ SETUP = """
     const stream = new MediaStream([tone(880)]);
     window.captureTracks.push(...stream.getTracks()); return stream;
   };
+  const NativeWorker = window.Worker;
+  window.Worker = function(url, options) {
+    if (!String(url).includes('transcription-worker.js')) return new NativeWorker(url, options);
+    return {
+      postMessage(data) {
+        window.speechSamples = data.audioBuffer.byteLength / 4;
+        setTimeout(() => this.onmessage?.({data:{type:'result', jobId:data.jobId,
+          output:{text:'Проверка записи экрана', chunks:[{text:'Проверка записи экрана',timestamp:[0,1]}]}}}), 10);
+      },
+      terminate() {}
+    };
+  };
+  window.Worker.prototype = NativeWorker.prototype;
 })();
 """
 def stopped(page):
@@ -106,11 +119,19 @@ try:
         # Verify both independent tones survived the Web Audio mix and encoding.
         raw = subprocess.check_output(['ffmpeg','-v','error','-i',str(output),'-vn','-ac','1','-ar','8000','-f','f32le','-'])
         import array, math
-        samples = array.array('f',raw)
+        # Use one continuous section before the pause; tones may change phase across a pause.
+        samples = array.array('f',raw)[800:4800]
         def amplitude(hz):
             return abs(sum(x * complex(math.cos(2*math.pi*hz*i/8000), math.sin(2*math.pi*hz*i/8000))
                            for i,x in enumerate(samples))) / len(samples)
         assert amplitude(440) > .03 and amplitude(880) > .03
+        page.click('#videoStartBtn')
+        page.wait_for_function("document.querySelector('#videoStatus').textContent === 'ГОТОВО'", timeout=180_000)
+        assert page.evaluate('speechSamples') > 16000, 'Recorded WebM must decode into real PCM for Whisper'
+        assert page.locator('#videoText').input_value() == 'Проверка записи экрана'
+        for button, extension in [('#videoTxt', '.txt'), ('#videoSrt', '.srt')]:
+            with page.expect_download() as info: page.click(button)
+            assert info.value.suggested_filename.endswith(extension)
         page.click('#videoSourceFile'); page.click('#videoSourceRecord')
         assert page.locator('#videoDownloadVideo').is_enabled(), 'Return to record restores the completed file'
         # Silent recording and ended event in pause must finalize a playable video without ASR.
