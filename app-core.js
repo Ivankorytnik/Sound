@@ -601,6 +601,7 @@
 }
 
   function resetResult() {
+    machineText = ''; editorDirty = false;
     els.resultEmpty.classList.remove('hidden'); els.resultBlock.classList.add('hidden'); els.transcript.value = '';
     els.wordCount.textContent = '0'; els.segmentCount.textContent = '0'; els.audioDuration.textContent = '—'; els.segmentsList.innerHTML = '';
     els.segmentsBox.open = false; state.lastSegments = [];
@@ -623,7 +624,7 @@
   els.modelSelect.disabled = value;
   els.qualitySelect.disabled = value;
   els.cleanupSelect.disabled = value;
-  els.transcribeBtnText.textContent = value ? 'ОСТАНОВИТЬ' : 'РАСПОЗНАТЬ РЕЧЬ';
+  els.transcribeBtnText.textContent = value ? 'ОСТАНОВИТЬ РАСПОЗНАВАНИЕ' : 'РАСПОЗНАТЬ РЕЧЬ';
 }
 
   function getProfile() {
@@ -841,8 +842,34 @@
     state.transcriptionWorker?.terminate(); state.transcriptionWorker = null; state.transcriptionJobId = null; setTranscriptionBusy(false);
   }
 
+  let machineText = '';
+  let editorDirty = false;
+  els.transcript.addEventListener('input', () => { editorDirty = true; });
+  function updateEditor(next) {
+    const el = els.transcript;
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+    const start = el.selectionStart, end = el.selectionEnd, top = el.scrollTop;
+    if (!editorDirty) el.value = next;
+    else {
+      // Stream output is cumulative. Preserve the edited prefix and append only new text.
+      let common = 0;
+      while (common < machineText.length && common < next.length && machineText[common] === next[common]) common++;
+      if (common === machineText.length) el.value += next.slice(common);
+      else {
+        // Final punctuation/normalization may revise the prefix. Keep user edits,
+        // append words beyond the previously received machine transcript.
+        const previousWords = machineText.trim().split(/\s+/u).filter(Boolean).length;
+        const words = next.trim().split(/\s+/u).filter(Boolean);
+        if (words.length > previousWords) el.value += ' ' + words.slice(previousWords).join(' ');
+      }
+    }
+    machineText = next;
+    el.setSelectionRange(start, end);
+    el.scrollTop = atEnd && document.activeElement !== el ? el.scrollHeight : top;
+  }
+
   function renderLiveText(text) {
-    els.resultEmpty.classList.add('hidden'); els.resultBlock.classList.remove('hidden'); els.transcript.value = text;
+    els.resultEmpty.classList.add('hidden'); els.resultBlock.classList.remove('hidden'); updateEditor(text);
     updateWordCount(); els.audioDuration.textContent = formatTime(state.currentDuration);
   }
 
@@ -860,7 +887,7 @@
     };
   }).filter((chunk) => chunk.text);
   state.lastSegments = chunks;
-  els.transcript.value = transcript;
+  updateEditor(transcript);
   updateWordCount();
   els.segmentCount.textContent = String(chunks.length);
   els.audioDuration.textContent = formatTime(state.currentDuration);
