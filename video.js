@@ -16,7 +16,8 @@
     empty: $('videoEmpty'), result: $('videoResult'), text: $('videoText'),
     words: $('videoWordCount'), duration: $('videoDuration'), segments: $('videoSegmentCount'),
     copy: $('videoCopy'), txt: $('videoTxt'), srt: $('videoSrt'),
-    sourceFile: $('videoSourceFile'), sourceUrl: $('videoSourceUrl'), urlPanel: $('videoUrlPanel'),
+    sourceFile: $('videoSourceFile'), sourceUrl: $('videoSourceUrl'), sourceRecord: $('videoSourceRecord'),
+    recordPanel: $('videoRecordPanel'), urlPanel: $('videoUrlPanel'),
     urlInput: $('videoSourceInput'), checkUrl: $('videoCheckUrl'), mediaOptions: $('videoMediaOptions'),
     downloadQuality: $('videoDownloadQuality'), audioFormat: $('videoAudioFormat'),
     downloadVideo: $('videoDownloadVideo'), downloadAudio: $('videoDownloadAudio'),
@@ -26,7 +27,21 @@
   const state = { file: null, url: null, busy: false, cancelled: false,
     source: null, mode: 'file', controller: null, cachedPCM: null, cachedDuration: 0,
     audioBlob: null, audioType: null, audioUrl: null, overLimit: false, pendingReject: null,
-    session: 0, ffmpeg: null, worker: null, duration: 0, segments: [], lastProgress: 0 };
+    recording: false, session: 0, ffmpeg: null, worker: null, duration: 0, segments: [], lastProgress: 0 };
+  const capture = window.SpeechVideoRecorder({
+    onActive(value) {
+      state.recording = value;
+      for (const control of [ui.fileInput, ui.clear, ui.sourceFile, ui.sourceUrl, ui.sourceRecord,
+        ui.checkUrl, ui.urlInput, ui.language, ui.quality, ui.audioFormat]) control.disabled = value || state.busy;
+      if (value) ui.preview.pause();
+      ui.previewWrap.hidden = value || !state.file;
+      refreshActions();
+    },
+    onFile(file, metadata) {
+      select(file);
+      if (state.source) { Object.assign(state.source, metadata); showSource(); }
+    },
+  });
 
   function prettyBytes(bytes) {
     return bytes >= 1024 * 1024 ? (bytes / (1024 * 1024)).toFixed(1) + ' МБ'
@@ -105,9 +120,9 @@
   function refreshActions() {
     const valid = !!state.source && !state.overLimit;
     const hasAudio = valid && state.source.hasAudio !== false;
-    ui.start.disabled = state.busy ? false : !hasAudio;
-    ui.downloadVideo.disabled = state.busy || !valid;
-    ui.downloadAudio.disabled = state.busy || !hasAudio;
+    ui.start.disabled = state.recording || (state.busy ? false : !hasAudio);
+    ui.downloadVideo.disabled = state.recording || state.busy || !valid;
+    ui.downloadAudio.disabled = state.recording || state.busy || !hasAudio;
     ui.mediaOptions.hidden = !state.source;
     ui.audioHint.textContent = state.source?.hasAudio === false ? 'В этом видео нет аудиодорожки' :
       state.source?.hasAudio === true ? 'В видео есть аудиодорожка.' :
@@ -130,7 +145,7 @@
     refreshActions();
   }
   function select(file) {
-    if (state.busy) return;
+    if (state.busy || state.recording) return;
     state.session += 1;
     resetResult();
     clearAudio();
@@ -164,7 +179,8 @@
   function busy(isBusy) {
     state.busy = isBusy;
     for (const control of [ui.fileInput, ui.clear, ui.language, ui.quality, ui.sourceFile,
-      ui.sourceUrl, ui.checkUrl, ui.urlInput, ui.audioFormat]) control.disabled = isBusy;
+      ui.sourceUrl, ui.sourceRecord, ui.checkUrl, ui.urlInput, ui.audioFormat]) control.disabled = isBusy || state.recording;
+    capture.setBusy(isBusy);
     ui.cancel.hidden = !isBusy;
     ui.startLabel.textContent = isBusy ? 'ОСТАНОВИТЬ ОБРАБОТКУ' : 'РАСПОЗНАТЬ РЕЧЬ';
     refreshActions();
@@ -183,13 +199,16 @@
     report(null, 'ОТМЕНЕНО', 'Обработка остановлена. Можно запустить действие снова.');
   }
   function sourceMode(mode) {
-    if (state.busy) return;
+    if (state.busy || state.recording) return;
     select(null);
     state.mode = mode;
     ui.sourceFile.setAttribute('aria-pressed', String(mode === 'file'));
     ui.sourceUrl.setAttribute('aria-pressed', String(mode === 'url'));
+    ui.sourceRecord.setAttribute('aria-pressed', String(mode === 'record'));
+    ui.recordPanel.hidden = mode !== 'record';
     ui.drop.hidden = mode !== 'file';
     ui.urlPanel.hidden = mode !== 'url';
+    if (mode === 'record') capture.restore();
   }
   function readableError(error) {
     if (error?.name === 'TimeoutError') return 'Источник не ответил вовремя. Попробуй ещё раз.';
@@ -433,6 +452,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
   async function perform(action) {
+    if (state.recording) return;
     if (state.busy) { if (action === 'transcribe') stop(); return; }
     if (!state.source || state.overLimit) return;
     state.cancelled = false;
@@ -452,6 +472,7 @@
       if (!isCurrent() || !file) return;
       if (action === 'video') {
         saveBlob(file, state.source.name);
+        capture.markSaved(file);
         report(null, 'ГОТОВО', 'Файл передан браузеру для сохранения. Сохранён исходный формат, без перекодирования.');
       } else if (action === 'audio') {
         const format = ui.audioFormat.value;
@@ -505,6 +526,7 @@
 
   ui.sourceFile.addEventListener('click', () => sourceMode('file'));
   ui.sourceUrl.addEventListener('click', () => sourceMode('url'));
+  ui.sourceRecord.addEventListener('click', () => sourceMode('record'));
   ui.checkUrl.addEventListener('click', checkUrl);
   ui.urlInput.addEventListener('input', () => { if (!state.busy) select(null); });
   ui.urlInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') checkUrl(); });

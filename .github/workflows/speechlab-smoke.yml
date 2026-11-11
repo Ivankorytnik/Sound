@@ -24,6 +24,7 @@ jobs:
           node --check transcription-runtime.js
           node --check transcription-worker.js
           node --check video.js
+          node --check video-recorder.js
           node --check video-source.js
           node --check video-ffmpeg-worker.js
       - name: Install browser and Playwright
@@ -37,6 +38,7 @@ jobs:
           node video_source_test.cjs
           python smoke_test.py
           python video_smoke_test.py
+          python video_recorder_test.py
           python video_e2e_test.py
           python video_url_test.py
       - name: Meeting folder and transcript saving
