@@ -31,7 +31,7 @@ with wave.open(audio,'wb') as f:
 with sync_playwright() as p:
     browser=p.chromium.launch(args=['--no-sandbox'])
     for choose_first in [True,False]:
-        page=browser.new_page(accept_downloads=True);page.add_init_script(FIXTURE);errors=[];downloads=[]
+        page=browser.new_page(accept_downloads=True);page.add_init_script(f"({FIXTURE})()");errors=[];downloads=[]
         page.on('pageerror',lambda e:errors.append(str(e)));page.on('download',lambda d:downloads.append(d))
         page.goto('http://127.0.0.1:8777');page.wait_for_selector('#chooseSaveFolderBtn',state='attached')
         # Works with both compact and the original page layout.
