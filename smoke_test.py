@@ -38,39 +38,14 @@ with sync_playwright() as p:
     assert page.locator("#dictaphoneMode").is_visible()
     assert page.locator("#liveMode").is_hidden()
     assert page.locator("#dictaphoneModeBtn").get_attribute("aria-selected") == "true"
-    # Desktop: the toggle and recording status share the same row and height.
-    toggle_box = page.locator("#dictaphoneMode > .capture-options").bounding_box()
-    status_box = page.locator("#dictaphoneStatus").bounding_box()
-    assert toggle_box and status_box
-    assert abs(toggle_box["y"] - status_box["y"]) <= 2, "Dictaphone toggle and status must align"
-    assert toggle_box["x"] + toggle_box["width"] <= status_box["x"] + 2, "Status must be to the right of toggle"
-    assert abs(toggle_box["height"] - status_box["height"]) <= 2, "Dictaphone cards must match height"
-    assert page.locator("#dictaphoneAutoTranscribeToggle").is_checked()
-    page.wait_for_selector("#dictaphoneSaveFolderSlot #chooseSaveFolderBtn")
-    start_box = page.locator("#startDictaphoneBtn").bounding_box()
-    help_box = page.locator("#dictaphoneMode .capture-help").bounding_box()
-    folder_box = page.locator("#dictaphoneSaveFolderSlot .folder-save-row").bounding_box()
-    assert start_box and help_box and folder_box
-    assert abs(start_box["y"] - help_box["y"]) <= 3, "Help is not inline with start"
-    assert abs(start_box["y"] - folder_box["y"]) <= 3, "Save folder is not inline with start"
-    assert start_box["x"] < help_box["x"] < folder_box["x"]
-    page.click("#dictaphoneMode .capture-help summary")
-    assert page.locator("#dictaphoneMode .capture-help").get_attribute("open") is not None
-    page.click("#dictaphoneMode .capture-help summary")
-    page.set_viewport_size({"width": 390, "height": 780})
-    toggle_box = page.locator("#dictaphoneMode > .capture-options").bounding_box()
-    status_box = page.locator("#dictaphoneStatus").bounding_box()
-    assert toggle_box and status_box
-    assert status_box["y"] >= toggle_box["y"] + toggle_box["height"], "Mobile cards must stack"
-    start_box = page.locator("#startDictaphoneBtn").bounding_box()
-    help_box = page.locator("#dictaphoneMode .capture-help").bounding_box()
-    folder_box = page.locator("#dictaphoneSaveFolderSlot .folder-save-row").bounding_box()
-    assert start_box and help_box and folder_box
-    assert start_box["y"] < help_box["y"] < folder_box["y"], "Mobile toolbar must stack"
+    # Compact controls stay visible; folder picker lives in advanced settings.
+    assert page.locator('#advancedSettings').get_attribute('open') is None
+    assert page.locator('#saveFolderSlot #chooseSaveFolderBtn').count() == 1
+    assert page.locator('#dictaphoneAutoTranscribeToggle').is_checked()
     page.set_viewport_size({"width": 1280, "height": 720})
     page.click("#fileModeBtn")
     assert page.locator("#fileMode").is_visible()
-    page.wait_for_selector(".input-panel > .folder-save-row #chooseSaveFolderBtn")
+    assert page.locator("#saveFolderSlot #chooseSaveFolderBtn").count() == 1
     assert page.locator("#chooseSaveFolderBtn").count() == 1
     page.locator("#fileInput").set_input_files({
         "name": "test.wav", "mimeType": "audio/wav",

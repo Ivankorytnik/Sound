@@ -38,3 +38,11 @@ jobs:
           python video_smoke_test.py
           python video_e2e_test.py
           python video_url_test.py
+      - name: Compact layout and editing regression
+        run: python compact_smoke_test.py
+      - name: Save requested screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: speechlab-compact-screenshots
+          path: screenshots/

@@ -149,6 +149,8 @@
     // Keep one folder picker (and its selected directory) across all modes.
     // Only move the existing DOM node when the visible mode changes.
     function placeFolderPicker() {
+      const compactSlot = document.getElementById('saveFolderSlot');
+      if (compactSlot) { if (row.parentElement !== compactSlot) compactSlot.appendChild(row); return; }
       if (dictaphoneSlot && dictaphoneMode && !dictaphoneMode.classList.contains('hidden')) {
         if (row.parentElement !== dictaphoneSlot) dictaphoneSlot.appendChild(row);
       } else if (audioButton) {
