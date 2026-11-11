@@ -83,3 +83,30 @@
 .video-page button:disabled { cursor: not-allowed; opacity: .5; }
 .video-page [hidden] { display: none !important; }
 @media (max-width: 560px) { .video-url-row { flex-direction: column; } }
+/* Video 1.2: screen capture controls remain inside the source panel. */
+.video-source-tabs { flex-wrap:wrap; }
+.video-source-tabs button { flex:1 1 125px; font-size:12px; }
+.video-record-settings { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:center; font-size:12px; }
+.video-record-settings label:first-child, .video-record-settings label:nth-child(2) { display:flex; align-items:center; gap:6px; }
+.video-record-settings select { width:100%; min-width:0; background:#0d2431; color:var(--text); border:1px solid var(--line-strong); padding:8px; border-radius:8px; }
+.video-record-indicators { display:flex; flex-wrap:wrap; gap:5px 14px; margin:12px 0; font-size:11px; color:var(--muted); }
+.video-record-toolbar { display:flex; justify-content:space-between; align-items:center; gap:10px; margin:10px 0; font-size:12px; }
+#videoRecordTimer { font-variant-numeric:tabular-nums; font-size:20px; color:var(--cyan); }
+.video-record-buttons { display:flex; flex-wrap:wrap; gap:8px; }
+.video-record-buttons button { flex:1 1 auto; padding:11px; border:1px solid var(--line-strong); border-radius:9px; background:var(--surface-soft); color:var(--text); cursor:pointer; }
+.video-record-buttons button:first-child { color:var(--cyan); }
+#videoRecordPreview { width:100%; max-height:200px; margin-top:10px; background:#000; border-radius:10px; display:block; }
+.video-topbar { padding-bottom:18px; }
+.video-back { margin-bottom:14px; }
+.video-panel { padding:20px; }
+.video-options { margin:14px 0; }
+@media (max-width:520px) { .video-record-settings { grid-template-columns:1fr; } .video-record-toolbar { flex-wrap:wrap; } }
+.video-output-panel:has(#videoPreviewWrap:not([hidden])) .video-empty,
+.video-output-panel:has(#videoRecordPreview:not([hidden])) .video-empty { min-height:140px; }
+.video-output-panel:has(#videoPreviewWrap:not([hidden])) .video-empty-symbol,
+.video-output-panel:has(#videoRecordPreview:not([hidden])) .video-empty-symbol { font-size:32px; }
+.video-topbar h1 { font-size:clamp(30px,3.5vw,42px); }
+.video-topbar p { font-size:13px; line-height:1.45; }
+.video-back { margin-bottom:8px; }
+.video-panel-heading { margin-bottom:15px; padding-bottom:13px; }
+.video-media-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }

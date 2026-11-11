@@ -7,26 +7,53 @@
   <title>Видео в текст — Speech Lab</title>
   <link rel="icon" href="./favicon.ico" sizes="any" />
   <link rel="stylesheet" href="./styles.css?build=video-1.1-20261110" />
-  <link rel="stylesheet" href="./video.css?build=video-1.1-20261110" />
+  <link rel="stylesheet" href="./video.css?build=video-1.2-20261111" />
 </head>
 <body>
   <main class="shell video-page">
     <header class="video-topbar">
       <div class="video-title-group">
         <a class="video-back" href="./" aria-label="Вернуться в Speech Lab">← ВСЕ РЕЖИМЫ SPEECH LAB</a>
-        <div class="video-kicker">LOCAL AI · МОДУЛЬ ВИДЕО 1.1</div>
+        <div class="video-kicker">LOCAL AI · МОДУЛЬ ВИДЕО 1.2</div>
         <h1>ВИДЕО <span>→ ТЕКСТ</span></h1>
-        <p>Загрузи видео или вставь прямую ссылку. Скачай видео, аудио или распознай речь. Диктофон, встречи и обычные аудиофайлы работают независимо.</p>
+        <p>Загрузи видео, запиши экран со звуком или вставь прямую ссылку. Сохрани запись и распознай речь на своём компьютере.</p>
       </div>
       <div class="video-local-badge">● ЛОКАЛЬНАЯ ОБРАБОТКА</div>
     </header>
 
     <div class="video-grid">
       <section class="video-panel video-input-panel" aria-label="Загрузка видео">
-        <div class="video-panel-heading"><span>01</span><h2>ЗАГРУЗКА ВИДЕО</h2></div>
+        <div class="video-panel-heading"><span>01</span><h2>ИСТОЧНИК ВИДЕО</h2></div>
         <div class="video-source-tabs" role="group" aria-label="Источник видео">
-          <button type="button" id="videoSourceFile" aria-pressed="true">Загрузить файл</button>
-          <button type="button" id="videoSourceUrl" aria-pressed="false">Вставить ссылку</button>
+          <button type="button" id="videoSourceFile" aria-pressed="true">Загрузить видео</button>
+          <button type="button" id="videoSourceRecord" aria-pressed="false">Записать видео</button>
+          <button type="button" id="videoSourceUrl" aria-pressed="false">Видео по ссылке</button>
+        </div>
+        <div id="videoRecordPanel" class="video-record" hidden>
+          <div class="video-record-settings">
+            <label><input type="checkbox" id="videoRecordSound" checked /> Записывать звук источника</label>
+            <label><input type="checkbox" id="videoRecordMic" /> Добавить микрофон</label>
+            <label for="videoRecordDevice">Микрофон</label>
+            <select id="videoRecordDevice" disabled><option value="">По умолчанию</option></select>
+          </div>
+          <div class="video-record-indicators" aria-live="polite">
+            <span id="videoRecordSoundStatus">Звук источника: не подключён</span>
+            <span id="videoRecordMicStatus">Микрофон: выключен</span>
+          </div>
+          <div class="video-record-toolbar">
+            <strong id="videoRecordTimer" aria-label="Продолжительность записи">00:00:00</strong>
+            <span id="videoRecordStatus" role="status">Готов к записи</span>
+          </div>
+          <div class="video-record-buttons">
+            <button type="button" id="videoRecordStart">Выбрать источник и начать</button>
+            <button type="button" id="videoRecordPause" hidden>Пауза</button>
+            <button type="button" id="videoRecordResume" hidden>Продолжить</button>
+            <button type="button" id="videoRecordStop" hidden>Остановить</button>
+            <button type="button" id="videoRecordSave" hidden>Скачать запись</button>
+          </div>
+          <video id="videoRecordPreview" autoplay muted playsinline hidden aria-label="Предпросмотр захватываемого экрана"></video>
+          <p id="videoRecordNote" class="video-hint" aria-live="polite">Выбери вкладку, окно или экран в диалоге браузера. Для звука вкладки включи «Также передавать аудио». Звук окна и всего экрана зависит от браузера и ОС. Для записи с микрофоном лучше использовать наушники.</p>
+          <p class="video-hint">Запись хранится в памяти до скачивания. При перезагрузке страницы она пропадёт. Паузы в длительность не входят. Запись остановится при достижении 90 минут или примерно 280 МБ.</p>
         </div>
         <div id="videoUrlPanel" hidden>
           <label class="video-transcript-label" for="videoSourceInput">ПРЯМАЯ ССЫЛКА НА ВИДЕО</label>
@@ -135,6 +162,7 @@
     </footer>
   </main>
   <script defer src="./video-source.js?build=video-1.1-20261110"></script>
-  <script defer src="./video.js?build=video-1.1-20261110"></script>
+  <script defer src="./video-recorder.js?build=video-1.2-20261111"></script>
+  <script defer src="./video.js?build=video-1.2-20261111"></script>
 </body>
 </html>
