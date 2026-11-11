@@ -19,6 +19,7 @@ jobs:
           node --check app-core.js
           node --check app.js
           node --check folder-save.js
+          node --check compact.js
           node --check transcription-engine.js
           node --check transcription-runtime.js
           node --check transcription-worker.js
@@ -38,6 +39,8 @@ jobs:
           python video_smoke_test.py
           python video_e2e_test.py
           python video_url_test.py
+      - name: Meeting folder and transcript saving
+        run: python meeting_folders_test.py
       - name: Compact layout and editing regression
         run: python compact_smoke_test.py
       - name: Save requested screenshots

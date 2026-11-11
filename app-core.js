@@ -562,6 +562,7 @@
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   els.audioPreview.pause();
   state.selectedFile = file;
+  window.SpeechLabFiles?.setSource(file, !!options.recorded);
   state.recordedBlob = options.recorded ? file : null;
   state.currentDuration = Number.isFinite(options.duration) ? options.duration : 0;
   resetResult();
@@ -582,7 +583,7 @@
 
   function clearFile() {
   if (state.transcriptionBusy) return;
-  state.selectedFile = null;
+  state.selectedFile = null; window.SpeechLabFiles?.setSource(null);
   state.recordedBlob = null;
   state.currentDuration = 0;
   state.lastSegments = [];
@@ -767,6 +768,7 @@
         try {
           renderResult(msg.output);
           const hasText = !!els.transcript.value.trim();
+          if (hasText) void window.SpeechLabFiles?.saveMeeting();
           setProgress(100, hasText ? 'ГОТОВО' : 'РЕЧЬ НЕ НАЙДЕНА', hasText
             ? 'Текст можно редактировать, копировать и выгружать.'
             : 'Аудио обработано, но разборчивая речь не обнаружена. Проверь звук и язык.');
