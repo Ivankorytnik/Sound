@@ -55,7 +55,7 @@
   }
   function ensureWorker() {
     if (state.worker) return state.worker;
-    const worker = new Worker('./live-translate-worker.js?build=20261123', { type: 'module' });
+    const worker = new Worker('./live-translate-worker.js?build=20261123-preflight', { type: 'module' });
     worker.onmessage = ({ data = {} }) => {
       if (data.type === 'status') {
         if (!state.ready) status(data.message || 'Загружаю модели…', 'ЗАГРУЗКА');
