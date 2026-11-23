@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Субтитры Speech Lab</title>
+<style>
+html,body{margin:0;min-height:100%;background:#07151d;color:#fff;font-family:system-ui,Arial,sans-serif}
+main{box-sizing:border-box;padding:22px;display:flex;flex-direction:column;gap:12px;min-height:100vh;justify-content:center}
+header{font-size:11px;font-weight:800;letter-spacing:.14em;color:#31d5ff}
+#ru{font-size:clamp(22px,4vw,38px);font-weight:800;line-height:1.4;overflow-wrap:anywhere}
+#en{font-size:14px;line-height:1.5;color:#b4c2cc}
+</style>
+</head>
+<body>
+<main>
+<header>SPEECH LAB · EN → RU · ЖИВОЙ ПЕРЕВОД</header>
+<div id="ru" aria-live="polite">Ожидание субтитров…</div>
+<div id="en"></div>
+</main>
+<script>
+'use strict';
+if (typeof BroadcastChannel === 'undefined') {
+  document.getElementById('ru').textContent = 'Этот браузер не поддерживает отдельное окно субтитров.';
+} else {
+  const channel = new BroadcastChannel('speechlab-live-captions');
+  channel.onmessage = ({data}) => {
+    if (data?.type !== 'caption') return;
+    document.getElementById('ru').textContent = String(data.ru || '');
+    document.getElementById('en').textContent = String(data.en || '');
+  };
+  channel.postMessage({type:'request'});
+  window.addEventListener('pagehide',()=>channel.close());
+}
+</script>
+</body>
+</html>
