@@ -53,6 +53,25 @@ try:
             print(f"attempt {attempt}: failed in {took:.1f}s · {message[:160]}")
         assert blocked, "the test must actually block model/CDN requests"
         assert not errors, errors
+
+        # Voice detector unavailable: translation must still start; speech-only degrades to
+        # text filtering and says so.
+        context = browser.new_context()
+        context.route("**/silero-vad/**", lambda route: route.abort())
+        page = context.new_page()
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto("http://127.0.0.1:8777/live-translate.html", wait_until="domcontentloaded")
+        page.locator("#livePrepare").click()
+        page.wait_for_function(
+            "['ГОТОВО', 'ОШИБКА'].includes(document.querySelector('#liveState').textContent)",
+            timeout=15 * 60 * 1000,
+        )
+        assert page.locator("#liveState").inner_text() == "ГОТОВО", page.locator("#liveError").inner_text()
+        note = page.locator("#liveDiagnostic").inner_text()
+        assert "Детектор речи недоступен" in note, note
+        assert page.locator("#liveStart").is_enabled()
+        print("VAD blocked: models ready without detector ·", note[-90:])
+        assert not errors, errors
         browser.close()
     print("Speech Lab offline model failure: PASS")
 finally:

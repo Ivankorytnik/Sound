@@ -40,6 +40,12 @@ INIT = """
       if (payload.type !== 'infer') return;
       const base = { session: payload.session, index: payload.index };
       const mode = window.__mode;
+      window.__speechOnlySent = payload.speechOnly;
+      if (mode === 'filter') {
+        this.emit({ type: 'segment', ...base, start: payload.start, end: payload.end,
+          silent: true, filtered: 'hallucination', raw: 'Thanks for watching!' });
+        return;
+      }
       if (mode === 'hang') return;
       if (mode === 'fatal') {
         this.emit({ type: 'failure', phase: 'infer', fatal: true, message: 'ONNX test failure.', ...base });
@@ -147,6 +153,26 @@ with sync_playwright() as p:
     assert page.locator("#liveLog .live-line").count() == 1
     assert "Мы обсуждаем поставки" in text(page, "#liveRu")
     assert text(page, "#liveDropped") == "0"
+
+    assert page.evaluate("window.__speechOnlySent") is True, "speech-only must be on by default"
+
+    # 6. Speech-only: filtered fragments never reach captions, log, TXT or SRT; only the counter.
+    page.evaluate("window.__mode = 'filter'")
+    capture_tail_and_stop(page)
+    assert page.locator("#liveLog .live-line").count() == 0
+    assert text(page, "#liveFiltered") == "1", text(page, "#liveFiltered")
+    assert "Thanks for watching" not in text(page, "#liveRu") + text(page, "#liveEn")
+    assert page.locator("#liveTxt").is_disabled() and page.locator("#liveSrt").is_disabled(), \
+        "nothing filtered may be exported"
+
+    # 7. The switch is sent with every fragment and remembered after reload.
+    page.locator("#liveSpeechOnly").uncheck()
+    page.evaluate("window.__mode = 'ok'")
+    capture_tail_and_stop(page)
+    assert page.evaluate("window.__speechOnlySent") is False
+    page.reload(wait_until="domcontentloaded")
+    assert not page.locator("#liveSpeechOnly").is_checked(), "choice must persist"
+    page.locator("#liveSpeechOnly").check()
 
     assert not errors, errors
     browser.close()
