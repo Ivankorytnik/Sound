@@ -8,7 +8,7 @@
   <link rel="icon" href="./favicon.ico" sizes="any" />
   <link rel="stylesheet" href="./styles.css?build=live-20261123" />
   <link rel="stylesheet" href="./video.css?build=live-20261123" />
-  <link rel="stylesheet" href="./live-translate.css?build=20261123" />
+  <link rel="stylesheet" href="./live-translate.css?build=20261123-speech" />
 </head>
 <body>
 <main class="shell video-page live-page">
@@ -36,6 +36,10 @@
         <button type="button" id="liveStart" disabled>2. НАЧАТЬ ПЕРЕВОД</button>
         <button type="button" id="liveStop" disabled>ОСТАНОВИТЬ</button>
       </div>
+      <label class="live-toggle" for="liveSpeechOnly">
+        <input type="checkbox" id="liveSpeechOnly" checked />
+        <span><strong>ТОЛЬКО РЕЧЬ</strong><small>Переводить только реплики участников. Музыка, шумы и описания звуков не попадают в субтитры, TXT и SRT.</small></span>
+      </label>
       <p id="liveStatus" class="live-status" role="status" aria-live="polite">Модели не загружены.</p>
       <p id="liveDiagnostic" class="video-hint" role="status" aria-live="polite" hidden></p>
       <p id="liveError" class="video-error" role="alert" hidden></p>
@@ -43,6 +47,7 @@
         <div><span>СОСТОЯНИЕ</span><strong id="liveState">ГОТОВНОСТЬ</strong></div>
         <div><span>ВРЕМЯ</span><strong id="liveDuration">00:00:00</strong></div>
         <div><span>ПРОПУЩЕНО</span><strong id="liveDropped">0</strong></div>
+        <div title="Фрагменты без речи: музыка, шумы, ложные фразы распознавания"><span>ОТФИЛЬТРОВАНО</span><strong id="liveFiltered">0</strong></div>
       </div>
       <div class="live-preview">
         <div class="video-panel-heading"><span>02</span><h2>ПРЕДПРОСМОТР СОВЕЩАНИЯ</h2></div>
@@ -76,7 +81,7 @@
   </div>
   <footer class="video-footer"><span>Speech Lab · Контур.Толк EN → RU</span><span>Отдельный экспериментальный модуль · запись видео не изменена</span></footer>
 </main>
-<script src="./live-translate-core.js?build=20261123-audit"></script>
-<script defer src="./live-translate.js?build=20261123-audit"></script>
+<script src="./live-translate-core.js?build=20261123-speech"></script>
+<script defer src="./live-translate.js?build=20261123-speech"></script>
 </body>
 </html>

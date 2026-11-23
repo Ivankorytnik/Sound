@@ -7,7 +7,11 @@
 .live-buttons button:first-child, .live-buttons button:nth-child(2) { background:var(--cyan); color:#052431; border:0; }
 .live-buttons button:disabled, .live-toolbar button:disabled { opacity:.35; cursor:default; }
 .live-status { color:var(--muted); background:var(--surface-soft); border:1px solid var(--line); border-radius:12px; padding:14px; line-height:1.6; overflow-wrap:anywhere; }
-.live-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin:20px 0; }
+.live-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:20px 0; }
+.live-toggle { display:flex; gap:12px; align-items:flex-start; padding:13px 14px; margin:0 0 14px; background:var(--surface-soft); border:1px solid var(--line); border-radius:12px; cursor:pointer; line-height:1.5; }
+.live-toggle input { width:18px; height:18px; margin:2px 0 0; accent-color:var(--cyan); flex:0 0 auto; cursor:pointer; }
+.live-toggle strong { display:block; font-size:12px; letter-spacing:.06em; }
+.live-toggle small { display:block; color:var(--muted); font-size:12px; margin-top:3px; }
 .live-metrics>div { padding:12px; background:var(--surface-soft); border:1px solid var(--line); border-radius:12px; min-width:0; }
 .live-metrics span { color:var(--muted); display:block; font-size:10px; letter-spacing:.07em; }
 .live-metrics strong { display:block; margin-top:8px; font-size:14px; overflow-wrap:anywhere; }
