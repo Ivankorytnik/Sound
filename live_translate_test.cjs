@@ -8,7 +8,7 @@ function near(actual, expected, tolerance = 0.002) {
 const oneSecond = Float32Array.from({length:48000}, (_,i)=> Math.sin(2*Math.PI*400*i/48000));
 const down = core.resampleMono(oneSecond,48000);
 assert.equal(down.length,16000);
-near(down[250],0,0.04);
+near(down[200],0,0.04);
 assert.equal(core.resampleMono(new Float32Array([0.25,0.5]),16000)[1],0.5);
 assert.equal(core.resampleMono(new Float32Array(0),48000).length,0);
 assert.throws(()=>core.resampleMono(oneSecond,0),RangeError);
