@@ -12,11 +12,12 @@
   const FRAME_SECONDS = 6;
   const SAMPLE_RATE = 16000;
   const state = {
-    ready: false, loading: false, active: false, worker: null,
+    ready: false, loading: false, active: false, starting: false, stopping: false, draining: false,
+    stopPromise: null, drainResolve: null, resampler: null, worker: null,
     stream: null, context: null, source: null, processor: null, sink: null,
     samples: [], length: 0, session: 0, index: 0, inFlight: false,
     queue: null, dropped: 0, started: 0, elapsed: 0, timer: null,
-    segments: [], pendingEnds: new Map(), channel: null,
+    segments: [], channel: null,
   };
 
   function status(message, label) {
@@ -29,7 +30,7 @@
   }
   function buttons() {
     ui.prepare.disabled = state.loading || state.active || state.ready;
-    ui.start.disabled = !state.ready || state.active;
+    ui.start.disabled = !state.ready || state.active || state.starting || state.stopping;
     ui.stop.disabled = !state.active;
     const hasText = state.segments.length > 0;
     ui.copy.disabled = ui.txt.disabled = ui.srt.disabled = !hasText;
@@ -63,7 +64,7 @@
         status('Модели загружены. Теперь выбери вкладку Толка со звуком.', 'ГОТОВО');
         buttons();
       } else if (data.type === 'segment') {
-        if (!state.active || data.session !== state.session) return;
+        if ((!state.active && !state.draining) || data.session !== state.session) return;
         if (!data.silent && data.ru) appendSegment(data);
         next();
       } else if (data.type === 'failure') {
@@ -74,7 +75,7 @@
           worker.terminate();
           if (state.worker === worker) state.worker = null;
           buttons();
-        } else if (data.session === state.session) {
+        } else if ((state.active || state.draining) && data.session === state.session) {
           state.dropped += 1;
           updateClock();
           error('Фрагмент не обработан: ' + data.message);
@@ -124,13 +125,16 @@
   }
   function next() {
     state.inFlight = false;
-    if (!state.active || !state.queue) return;
-    const item = state.queue;
-    state.queue = null;
-    dispatch(item);
+    if ((state.active || state.draining) && state.queue) {
+      const item = state.queue;
+      state.queue = null;
+      dispatch(item);
+      return;
+    }
+    if (state.draining && state.drainResolve) state.drainResolve();
   }
   function dispatch(item) {
-    if (!state.active) return;
+    if (!state.active && !state.draining) return;
     if (state.inFlight) {
       if (state.queue) state.dropped += 1;
       state.queue = item;
@@ -172,9 +176,12 @@
     }
   }
   async function start() {
-    if (!state.ready || state.active) return;
+    if (!state.ready || state.active || state.starting || state.stopping) return;
+    state.starting = true;
+    buttons();
     error('');
     let stream;
+    let context;
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) {
         throw new Error('Браузер не поддерживает захват вкладки. Используй настольный Chrome или Edge.');
@@ -188,7 +195,7 @@
       if (!stream.getAudioTracks().length) {
         throw new Error('Нет аудиодорожки. Повтори и выбери вкладку Толка с опцией «Также передавать аудио».');
       }
-      const context = new AudioContext();
+      context = new AudioContext();
       const source = context.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
       const processor = context.createScriptProcessor(4096, 1, 1);
       const sink = context.createGain();
@@ -200,11 +207,19 @@
 
       state.stream = stream;
       state.context = context;
+      state.resampler = core.createStreamingResampler(context.sampleRate);
       state.source = source;
       state.processor = processor;
       state.sink = sink;
       state.session += 1;
       state.active = true;
+      state.starting = false;
+      state.draining = false;
+      state.stopping = false;
+      // New capture is a new timed transcript; never concatenate incompatible sessions.
+      state.segments = [];
+      ui.log.replaceChildren();
+      updateCaptions('', 'Ожидаю английскую речь…');
       state.elapsed = 0;
       state.started = performance.now();
       state.index = 0;
@@ -216,7 +231,7 @@
       processor.onaudioprocess = (event) => {
         if (!state.active) return;
         const input = event.inputBuffer.getChannelData(0);
-        collect(core.resampleMono(input, context.sampleRate));
+        collect(state.resampler.push(input));
       };
       const current = state.session;
       for (const track of stream.getTracks()) {
@@ -230,32 +245,70 @@
       buttons();
     } catch (e) {
       stream?.getTracks().forEach((track) => track.stop());
-      if (state.context) await stop('Подключение отменено.');
-      else showError(e.name === 'NotAllowedError' ? 'Браузер не получил разрешение на захват вкладки.' : e.message);
+      if (state.active) await stop('Подключение отменено.');
+      else {
+        try { await context?.close(); } catch (_) { /* best effort */ }
+        showError(e.name === 'NotAllowedError' ? 'Браузер не получил разрешение на захват вкладки.' : e.message);
+      }
+    } finally {
+      state.starting = false;
+      buttons();
     }
   }
   async function stop(message = 'Перевод остановлен.') {
+    if (state.stopPromise) return state.stopPromise;
     if (!state.active && !state.stream) return;
-    state.elapsed = elapsed();
+    state.stopping = true;
+    state.draining = true;
     state.active = false;
-    state.session += 1;
+    state.elapsed = (performance.now() - state.started) / 1000;
     clearInterval(state.timer);
     state.timer = null;
-    state.processor && (state.processor.onaudioprocess = null);
+    if (state.processor) state.processor.onaudioprocess = null;
     try { state.source?.disconnect(); } catch (_) { /* cleanup */ }
     try { state.processor?.disconnect(); } catch (_) { /* cleanup */ }
     try { state.sink?.disconnect(); } catch (_) { /* cleanup */ }
     state.stream?.getTracks().forEach((track) => track.stop());
     ui.video.srcObject = null;
-    if (state.context) await state.context.close().catch(() => {});
-    state.stream = state.context = state.source = state.processor = state.sink = null;
-    state.samples = [];
-    state.length = 0;
-    state.queue = null;
-    state.inFlight = false;
-    status(message, 'ОСТАНОВЛЕНО');
-    updateClock();
+    const context = state.context;
+    state.stream = state.context = state.source = state.processor = state.sink = state.resampler = null;
+    state.stopPromise = (async () => {
+      try {
+        await context?.close().catch(() => {});
+        // Process the last partial fragment instead of dropping the end of the meeting.
+        if (state.length) flush();
+        if (state.inFlight || state.queue) {
+          status('Останавливаю захват. Завершаю перевод последних фраз…', 'ЗАВЕРШЕНИЕ');
+          const completed = await new Promise((resolve) => {
+            let timer;
+            state.drainResolve = () => { clearTimeout(timer); resolve(true); };
+            timer = setTimeout(() => {
+              state.drainResolve = null;
+              resolve(false);
+            }, 30000);
+          });
+          if (!completed) {
+            state.dropped += Number(state.inFlight) + Number(Boolean(state.queue));
+            error('Некоторые последние фразы не удалось завершить за 30 секунд.');
+          }
+        }
+      } finally {
+        state.session += 1;
+        state.draining = false;
+        state.queue = null;
+        state.inFlight = false;
+        state.samples = [];
+        state.length = 0;
+        state.drainResolve = null;
+        state.stopping = false;
+        state.stopPromise = null;
+        status(message, 'ОСТАНОВЛЕНО');
+        updateClock();
+        buttons();
+      }
+    })();
     buttons();
+    return state.stopPromise;
   }
   function transcript() {
     return state.segments.map((item) => '[' + core.clock(item.start) + ' – ' +
@@ -296,6 +349,11 @@
   });
   if (typeof BroadcastChannel !== 'undefined') {
     state.channel = new BroadcastChannel('speechlab-live-captions');
+    state.channel.onmessage = ({ data = {} }) => {
+      if (data.type === 'request') {
+        state.channel.postMessage({ type: 'caption', en: ui.en.textContent, ru: ui.ru.textContent });
+      }
+    };
   }
   buttons();
 })();
