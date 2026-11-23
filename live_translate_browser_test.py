@@ -59,7 +59,7 @@ with sync_playwright() as p:
     page.wait_for_url("**/live-translate.html")
     assert page.locator("#liveStart").is_disabled()
     page.locator("#livePrepare").click()
-    page.locator("#liveStart").wait_for(state="visible")
+    page.wait_for_function("!document.querySelector('#liveStart').disabled", timeout=10000)
     assert page.locator("#liveStart").is_enabled()
     page.locator("#liveStart").click()
     page.locator("#liveStop").wait_for(state="visible")
