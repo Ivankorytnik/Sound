@@ -37,6 +37,7 @@
         <button type="button" id="liveStop" disabled>ОСТАНОВИТЬ</button>
       </div>
       <p id="liveStatus" class="live-status" role="status" aria-live="polite">Модели не загружены.</p>
+      <p id="liveDiagnostic" class="video-hint" role="status" aria-live="polite" hidden></p>
       <p id="liveError" class="video-error" role="alert" hidden></p>
       <div class="live-metrics">
         <div><span>СОСТОЯНИЕ</span><strong id="liveState">ГОТОВНОСТЬ</strong></div>
@@ -76,6 +77,6 @@
   <footer class="video-footer"><span>Speech Lab · Контур.Толк EN → RU</span><span>Отдельный экспериментальный модуль · запись видео не изменена</span></footer>
 </main>
 <script src="./live-translate-core.js?build=20261123"></script>
-<script defer src="./live-translate.js?build=20261123"></script>
+<script defer src="./live-translate.js?build=20261123-preflight"></script>
 </body>
 </html>

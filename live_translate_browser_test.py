@@ -25,6 +25,10 @@ with sync_playwright() as p:
         constructor() { this.onmessage = null; this.onerror = null; }
         postMessage(payload) {
           if (payload.type === 'init') {
+            setTimeout(() => this.onmessage?.({ data: {
+              type: 'diagnostic', en: 'We need to discuss the delivery schedule.',
+              ru: 'Нам нужно обсудить график поставок.', model: 'q8'
+            } }), 0);
             setTimeout(() => this.onmessage?.({ data: { type: 'ready' } }), 0);
           } else if (payload.type === 'infer') {
             setTimeout(() => this.onmessage?.({ data: {
@@ -61,6 +65,7 @@ with sync_playwright() as p:
     page.locator("#livePrepare").click()
     page.wait_for_function("!document.querySelector('#liveStart').disabled", timeout=10000)
     assert page.locator("#liveStart").is_enabled()
+    assert "график поставок" in page.locator("#liveDiagnostic").inner_text()
     page.locator("#liveStart").click()
     page.wait_for_function("!document.querySelector('#liveStop').disabled", timeout=10000)
     assert page.locator("#liveStop").is_enabled()

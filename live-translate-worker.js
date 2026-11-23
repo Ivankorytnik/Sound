@@ -47,18 +47,46 @@ async function initialize(webgpu) {
     );
     env.allowLocalModels = false;
     env.useBrowserCache = true;
-    translator = await pipeline('translation', 'Xenova/opus-mt-en-ru', {
-      device: 'wasm',
-      dtype: 'q8',
-      progress_callback(event) {
-        if (event?.status === 'progress' && Number.isFinite(event.progress)) {
-          notify('status', {
-            message: 'Модель перевода: ' + Math.round(event.progress) + '%'
-              + (event.file ? ' · ' + event.file : ''),
-          });
+    // Loading ONNX weights is not enough: first inference can fail or be broken.
+    // Perform an actual English -> Russian translation before enabling capture.
+    const probeEnglish = 'We need to discuss the delivery schedule.';
+    const failures = [];
+    for (const dtype of ['q8', 'q4']) {
+      let candidate = null;
+      try {
+        notify('status', { message: 'Проверка модели перевода (' + dtype + ')…' });
+        candidate = await pipeline('translation', 'Xenova/opus-mt-en-ru', {
+          device: 'wasm',
+          dtype,
+          progress_callback(event) {
+            if (event?.status === 'progress' && Number.isFinite(event.progress)) {
+              notify('status', {
+                message: 'Модель перевода (' + dtype + '): ' + Math.round(event.progress) + '%'
+                  + (event.file ? ' · ' + event.file : ''),
+              });
+            }
+          },
+        });
+        const probe = await candidate(probeEnglish, {
+          max_new_tokens: 64, num_beams: 1, do_sample: false,
+        });
+        const probeRussian = tidy(Array.isArray(probe)
+          ? probe[0]?.translation_text : probe?.translation_text);
+        if (!/[а-яё]/iu.test(probeRussian)) {
+          throw new Error('Пробный перевод не содержит русского текста.');
         }
-      },
-    });
+        translator = candidate;
+        notify('diagnostic', { en: probeEnglish, ru: probeRussian, model: dtype });
+        break;
+      } catch (error) {
+        failures.push(dtype + ': ' + String(error?.message || error));
+        try { await candidate?.dispose?.(); } catch (_) { /* best effort */ }
+        if (dtype === 'q8') {
+          notify('status', { message: 'Основной формат модели не запустился. Пробую резервный q4…' });
+        }
+      }
+    }
+    if (!translator) throw new Error('Не удалось запустить перевод EN → RU. ' + failures.join(' | '));
     stage = 'ready';
     notify('ready');
   } catch (error) {
@@ -101,7 +129,7 @@ async function infer(message) {
       notify('segment', { session, index, start, end, silent: true });
       return;
     }
-    const translated = await translator(en, { max_new_tokens: 180 });
+    const translated = await translator(en, { max_new_tokens: 112, num_beams: 1, do_sample: false });
     const ru = tidy(Array.isArray(translated)
       ? translated[0]?.translation_text
       : translated?.translation_text);
