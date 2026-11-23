@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>Живой перевод Толка — Speech Lab</title>
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="./styles.css?build=live-20261123" />
+  <link rel="stylesheet" href="./video.css?build=live-20261123" />
+  <link rel="stylesheet" href="./live-translate.css?build=20261123" />
+</head>
+<body>
+<main class="shell video-page live-page">
+  <header class="video-topbar">
+    <div class="video-title-group">
+      <a class="video-back" href="./video.html">← ВИДЕО В ТЕКСТ</a>
+      <div class="video-kicker">SPEECH LAB · LOCAL AI · БЕСПЛАТНО</div>
+      <h1>ЖИВОЙ <span>ПЕРЕВОД</span></h1>
+      <p>Смотри совещание Контур.Толк и получай русские субтитры к английской речи. Без подписок и платных API.</p>
+    </div>
+    <div class="video-local-badge">● EN → RU · ЛОКАЛЬНО</div>
+  </header>
+
+  <div class="video-grid">
+    <section class="video-panel live-controls" aria-label="Управление переводом">
+      <div class="video-panel-heading"><span>01</span><h2>НАСТРОЙКА</h2></div>
+      <ol class="live-steps">
+        <li>Открой Контур.Толк в отдельной вкладке <strong>Chrome или Edge</strong>.</li>
+        <li>Нажми «Подготовить модели» заранее. Первый запуск скачает AI-модели, далее используется кэш браузера.</li>
+        <li>Нажми «Начать перевод», выбери <strong>вкладку Толка</strong> и включи «Также передавать аудио вкладки».</li>
+        <li>Смотри видео в Толке или в предварительном просмотре ниже.</li>
+      </ol>
+      <div class="live-buttons">
+        <button type="button" id="livePrepare">1. ПОДГОТОВИТЬ МОДЕЛИ</button>
+        <button type="button" id="liveStart" disabled>2. НАЧАТЬ ПЕРЕВОД</button>
+        <button type="button" id="liveStop" disabled>ОСТАНОВИТЬ</button>
+      </div>
+      <p id="liveStatus" class="live-status" role="status" aria-live="polite">Модели не загружены.</p>
+      <p id="liveError" class="video-error" role="alert" hidden></p>
+      <div class="live-metrics">
+        <div><span>СОСТОЯНИЕ</span><strong id="liveState">ГОТОВНОСТЬ</strong></div>
+        <div><span>ВРЕМЯ</span><strong id="liveDuration">00:00:00</strong></div>
+        <div><span>ПРОПУЩЕНО</span><strong id="liveDropped">0</strong></div>
+      </div>
+      <div class="live-preview">
+        <div class="video-panel-heading"><span>02</span><h2>ПРЕДПРОСМОТР СОВЕЩАНИЯ</h2></div>
+        <video id="liveVideo" autoplay muted playsinline aria-label="Беззвучный предпросмотр выбранной вкладки"></video>
+        <p class="video-hint">Предпросмотр не позволяет нажимать кнопки в Толке. Для участия переключись на исходную вкладку. Звук здесь намеренно не дублируется.</p>
+      </div>
+      <div class="video-privacy">
+        <strong>НЕ ИСПОЛЬЗУЕТ ПЛАТНЫЕ API</strong>
+        <p>Распознавание и перевод выполняются в браузере. Для загрузки JavaScript и моделей используются внешние CDN/Hugging Face; исходный звук и текст приложение на сервер не отправляет. Для секретных совещаний необходимо отдельно проверить корпоративную политику безопасности и локально разместить зависимости.</p>
+      </div>
+    </section>
+
+    <section class="video-panel live-output" aria-label="Субтитры и протокол">
+      <div class="video-panel-heading"><span>03</span><h2>ПЕРЕВОД СОВЕЩАНИЯ</h2></div>
+      <div class="live-caption" aria-live="polite" aria-atomic="true">
+        <span>РУССКИЕ СУБТИТРЫ</span>
+        <strong id="liveRu">После запуска здесь будет перевод английской речи.</strong>
+        <small id="liveEn">English transcript will appear here.</small>
+      </div>
+      <div class="live-toolbar">
+        <button type="button" id="livePopout">ОТКРЫТЬ ОКНО СУБТИТРОВ</button>
+        <button type="button" id="liveCopy" disabled>КОПИРОВАТЬ</button>
+        <button type="button" id="liveTxt" disabled>СКАЧАТЬ TXT</button>
+        <button type="button" id="liveSrt" disabled>СКАЧАТЬ SRT</button>
+        <button type="button" id="liveClear" disabled>ОЧИСТИТЬ</button>
+      </div>
+      <p class="video-hint">Перевод идёт по коротким фрагментам (примерно 6 секунд). Фактическая задержка зависит от скорости компьютера. Если AI не успевает, старые ожидающие фрагменты пропускаются, и счётчик показывает потери. Это не профессиональный синхронный перевод.</p>
+      <div class="live-log-heading">ПРОТОКОЛ · EN + RU</div>
+      <div id="liveLog" class="live-log" role="log" aria-label="История распознавания и перевода"></div>
+    </section>
+  </div>
+  <footer class="video-footer"><span>Speech Lab · Контур.Толк EN → RU</span><span>Отдельный экспериментальный модуль · запись видео не изменена</span></footer>
+</main>
+<script src="./live-translate-core.js?build=20261123"></script>
+<script defer src="./live-translate.js?build=20261123"></script>
+</body>
+</html>
