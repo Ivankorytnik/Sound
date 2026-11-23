@@ -248,7 +248,7 @@
     state.captureRecordingError = null;
     const recorder = new MediaRecorder(recordStream, mimeType ? { mimeType } : undefined);
     state.captureRecorder = recorder;
-    recorder.addEventListener('dataavailable', ({ data }) => { if (data?.size) state.captureChunks.push(data); });
+    recorder.addEventListener('dataavailable', ({ data }) => { if (data?.size) { state.captureChunks.push(data); window.SpeechLabRecovery?.append('live', data); } });
     recorder.addEventListener('stop', () => { void finishCaptureRecording(); }, { once: true });
     recorder.addEventListener('error', (event) => {
       state.captureRecordingError = event.error?.message || 'Ошибка MediaRecorder.';
@@ -256,6 +256,7 @@
       showCaptureDiagnostic('Сбой записи', state.captureRecordingError, { retryTab: true });
       stopCapture();
     });
+    await window.SpeechLabRecovery?.begin('live', recorder.mimeType || mimeType || 'audio/webm');
     recorder.start(1000);
     state.captureStartedAt = Date.now();
     startTimer('capture');
@@ -399,6 +400,7 @@
   const duration = Math.max(0, (Date.now() - state.captureStartedAt) / 1000);
   const mime = recorder.mimeType || 'audio/webm';
   const blob = new Blob(state.captureChunks, { type: mime });
+  await window.SpeechLabRecovery?.finish('live');
   const hadError = !!state.captureRecordingError;
   state.captureRecorder = null;
   stopMediaStream(state.displayStream);
@@ -461,12 +463,13 @@
     state.dictaphoneRecordingError = null;
     const recorder = new MediaRecorder(state.dictaphoneStream, mimeType ? { mimeType } : undefined);
     state.dictaphoneRecorder = recorder;
-    recorder.addEventListener('dataavailable', ({ data }) => { if (data?.size) state.dictaphoneChunks.push(data); });
+    recorder.addEventListener('dataavailable', ({ data }) => { if (data?.size) { state.dictaphoneChunks.push(data); window.SpeechLabRecovery?.append('dictaphone', data); } });
     recorder.addEventListener('stop', () => { void finishDictaphone(); }, { once: true });
     recorder.addEventListener('error', (event) => {
       state.dictaphoneRecordingError = event.error?.message || 'Ошибка MediaRecorder.';
       stopDictaphone();
     });
+    await window.SpeechLabRecovery?.begin('dictaphone', recorder.mimeType || mimeType || 'audio/webm');
     recorder.start(1000);
     state.dictaphoneStartedAt = Date.now();
     startTimer('dictaphone');
@@ -513,6 +516,7 @@
   const duration = Math.max(0, (Date.now() - state.dictaphoneStartedAt) / 1000);
   const mime = recorder.mimeType || 'audio/webm';
   const blob = new Blob(state.dictaphoneChunks, { type: mime });
+  await window.SpeechLabRecovery?.finish('dictaphone');
   const hadError = !!state.dictaphoneRecordingError;
   state.dictaphoneRecorder = null;
   stopMediaStream(state.dictaphoneStream);
@@ -580,6 +584,17 @@
   updateEngineHint();
   return true;
 }
+
+  function loadSavedRecording(file, transcript = '', options = {}) {
+    if (state.transcriptionBusy || state.captureRecorder || state.captureStarting ||
+        state.captureStopping || state.dictaphoneRecorder || state.dictaphoneStarting ||
+        state.dictaphoneStopping) return false;
+    if (file && !selectFile(file, { label: 'ИЗ АРХИВА', recorded: !!options.recorded })) return false;
+    if (!file) { clearFile(); setMode('file'); }
+    if (transcript) renderLiveText(transcript);
+    return true;
+  }
+  window.SpeechLabApp = Object.freeze({ loadSavedRecording });
 
   function clearFile() {
   if (state.transcriptionBusy) return;
