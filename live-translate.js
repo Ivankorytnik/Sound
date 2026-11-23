@@ -6,7 +6,7 @@
     prepare: $('livePrepare'), start: $('liveStart'), stop: $('liveStop'),
     status: $('liveStatus'), error: $('liveError'), state: $('liveState'),
     duration: $('liveDuration'), dropped: $('liveDropped'), video: $('liveVideo'),
-    ru: $('liveRu'), en: $('liveEn'), log: $('liveLog'), copy: $('liveCopy'),
+    ru: $('liveRu'), en: $('liveEn'), log: $('liveLog'), diagnostic: $('liveDiagnostic'), copy: $('liveCopy'),
     txt: $('liveTxt'), srt: $('liveSrt'), clear: $('liveClear'), popout: $('livePopout'),
   };
   const FRAME_SECONDS = 6;
@@ -58,6 +58,13 @@
     worker.onmessage = ({ data = {} }) => {
       if (data.type === 'status') {
         if (!state.ready) status(data.message || 'Загружаю модели…', 'ЗАГРУЗКА');
+      } else if (data.type === 'diagnostic') {
+        // A successful model-load does not imply usable translation. Show actual local inference.
+        const translated = String(data.ru || '').trim();
+        if (translated) {
+          ui.diagnostic.textContent = 'Проверка модели EN → RU: «' + String(data.en || '') + '» → «' + translated + '» (' + String(data.model || 'AI') + ').';
+          ui.diagnostic.hidden = false;
+        }
       } else if (data.type === 'ready') {
         state.loading = false;
         state.ready = true;
@@ -107,6 +114,8 @@
     if (state.active || state.loading || state.ready) return;
     state.loading = true;
     error('');
+    ui.diagnostic.hidden = true;
+    ui.diagnostic.textContent = '';
     status('Проверяю WebGPU и подготавливаю локальные модели…', 'ЗАГРУЗКА');
     buttons();
     const worker = ensureWorker();
