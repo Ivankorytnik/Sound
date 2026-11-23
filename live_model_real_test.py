@@ -46,7 +46,7 @@ try:
             + " / " + page.locator("#liveError").inner_text()
             + " / page errors: " + repr(page_errors)
         )
-        assert "→" in diagnostic and "график" not in "", diagnostic
+        assert "→" in diagnostic and "Проверка модели" in diagnostic, diagnostic
         assert page.locator("#liveStart").is_enabled()
         assert not page_errors, page_errors
         print("REAL MODEL PREFLIGHT PASS")
