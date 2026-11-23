@@ -1,9 +1,32 @@
 import { createResilientTranscriber } from './transcription-runtime.js?build=v1.6.4-20261021-01';
+import './live-translate-core.js?build=20261123-audit';
+
+const core = self.SpeechLiveCore;
+const TINY = 'onnx-community/whisper-tiny';
+// A ~6 s live fragment must not block the queue for the 10-minute file-transcription default.
+const LIVE_INFERENCE_TIMEOUT_MS = 45 * 1000;
+// After this many consecutive failed fragments the session is reported as fatal.
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 let recognizer = null;
 let translator = null;
 let stage = 'idle';
 let processing = false;
+let consecutiveFailures = 0;
+
+function forwardRecognizerEvent(type, data) {
+  if (type === 'model-progress') {
+    notify('status', { message: 'Whisper: ' + (data.file || Math.round(data.progress) + '%') });
+  } else if (type === 'backend-fallback' || type === 'status') {
+    notify('status', { message: data.message });
+  }
+}
+
+function createRecognizer(candidates) {
+  return createResilientTranscriber(candidates, 'live', forwardRecognizerEvent, {
+    inferenceTimeoutMs: LIVE_INFERENCE_TIMEOUT_MS,
+  });
+}
 
 const notify = (type, data = {}) => self.postMessage({ type, ...data });
 const tidy = (text) => String(text || '').replace(/\s+/gu, ' ').trim();
@@ -23,19 +46,11 @@ async function initialize(webgpu) {
   stage = 'loading';
   try {
     notify('status', { message: 'Загружаю Whisper Tiny для английской речи…' });
-    const tiny = 'onnx-community/whisper-tiny';
     const candidates = webgpu
-      ? [{ modelId: tiny, device: 'webgpu' }, { modelId: tiny, device: 'wasm' }]
-      : [{ modelId: tiny, device: 'wasm' }];
-    recognizer = createResilientTranscriber(candidates, 'live-prewarm', (type, data) => {
-      if (type === 'model-progress') {
-        notify('status', { message: 'Whisper: ' + (data.file || Math.round(data.progress) + '%') });
-      } else if (type === 'backend-fallback') {
-        notify('status', { message: data.message });
-      } else if (type === 'status') {
-        notify('status', { message: data.message });
-      }
-    });
+      ? [{ modelId: TINY, device: 'webgpu' }, { modelId: TINY, device: 'wasm' }]
+      : [{ modelId: TINY, device: 'wasm' }];
+    recognizer = createRecognizer(candidates);
+    consecutiveFailures = 0;
     // The runtime loads models lazily. A silent warm-up ensures Start means actually ready.
     await recognizer.transcribe(new Float32Array(16000), {
       task: 'transcribe', language: 'english', return_timestamps: false,
@@ -95,8 +110,26 @@ async function initialize(webgpu) {
     recognizer = null;
     try { await translator?.dispose?.(); } catch (_) { /* best effort */ }
     translator = null;
-    notify('failure', { phase: 'init', message: String(error?.message || error) });
+    // The shared runtime words its errors for file transcription; give a live-mode action.
+    const detail = String(error?.attempts?.at(-1)?.message || error?.message || error);
+    notify('failure', {
+      phase: 'init',
+      message: 'Не удалось запустить локальные AI-модели. Проверь интернет и доступ к '
+        + 'cdn.jsdelivr.net и huggingface.co, затем повтори подготовку. Подробности: ' + detail,
+    });
   }
+}
+
+async function translateSentences(en) {
+  const sentences = core.splitSentences(en);
+  const parts = [];
+  // Sequential on purpose: one sentence at a time keeps peak WASM memory flat.
+  for (const sentence of sentences) {
+    const output = await translator(sentence, { max_new_tokens: 112, num_beams: 1, do_sample: false });
+    const text = tidy(Array.isArray(output) ? output[0]?.translation_text : output?.translation_text);
+    if (text) parts.push(text);
+  }
+  return tidy(parts.join(' '));
 }
 
 async function infer(message) {
@@ -124,20 +157,28 @@ async function infer(message) {
       task: 'transcribe', language: 'english', return_timestamps: false,
       do_sample: false, num_beams: 1, max_length: 224,
     });
-    const en = tidy(result?.text);
-    if (!en || /^\[?(music|silence|applause)\]?\.?$/iu.test(en)) {
+    if (core.isNonSpeech(result?.text)) {
+      consecutiveFailures = 0;
       notify('segment', { session, index, start, end, silent: true });
       return;
     }
-    const translated = await translator(en, { max_new_tokens: 112, num_beams: 1, do_sample: false });
-    const ru = tidy(Array.isArray(translated)
-      ? translated[0]?.translation_text
-      : translated?.translation_text);
+    const en = core.stripAnnotations(result?.text);
+    const ru = await translateSentences(en);
     if (!ru) throw new Error('Модель вернула пустой перевод.');
+    consecutiveFailures = 0;
     notify('segment', { session, index, start, end, en, ru });
   } catch (error) {
+    consecutiveFailures += 1;
+    // The resilient runtime never reuses a failed backend; once every candidate failed it
+    // rejects all later fragments. Rebuild it (WASM, models come from the browser cache)
+    // instead of silently dropping the rest of the meeting.
+    if (Array.isArray(error?.attempts)) {
+      recognizer?.close();
+      recognizer = createRecognizer([{ modelId: TINY, device: 'wasm' }]);
+    }
     notify('failure', {
       phase: 'infer', session, index,
+      fatal: consecutiveFailures >= MAX_CONSECUTIVE_FAILURES,
       message: String(error?.message || error),
     });
   } finally {
