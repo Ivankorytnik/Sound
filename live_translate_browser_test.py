@@ -39,7 +39,7 @@ with sync_playwright() as p:
       window.Worker = FakeWorker;
       const nav = navigator.mediaDevices || {};
       Object.defineProperty(navigator, 'mediaDevices', { configurable: true,
-        value: { ...nav, getDisplayMedia: async () => {
+        value: { ...nav, addEventListener() {}, removeEventListener() {}, getDisplayMedia: async () => {
           const canvas = document.createElement('canvas');
           canvas.width = canvas.height = 16;
           const display = canvas.captureStream(10);
