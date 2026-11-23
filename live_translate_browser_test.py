@@ -62,7 +62,7 @@ with sync_playwright() as p:
     page.wait_for_function("!document.querySelector('#liveStart').disabled", timeout=10000)
     assert page.locator("#liveStart").is_enabled()
     page.locator("#liveStart").click()
-    page.locator("#liveStop").wait_for(state="visible")
+    page.wait_for_function("!document.querySelector('#liveStop').disabled", timeout=10000)
     assert page.locator("#liveStop").is_enabled()
     page.wait_for_function("document.querySelector('#liveLog').children.length > 0", timeout=15000)
     assert "Мы обсуждаем поставки" in page.locator("#liveRu").inner_text()
@@ -72,6 +72,7 @@ with sync_playwright() as p:
         page.locator("#liveSrt").click()
     assert event.value.suggested_filename.endswith(".srt")
     page.locator("#liveStop").click()
+    page.wait_for_function("!document.querySelector('#liveStart').disabled", timeout=10000)
     assert page.locator("#liveStart").is_enabled()
     assert not errors, errors
     page.evaluate("window.__testOscillator?.stop(); window.__testAudio?.close();")
