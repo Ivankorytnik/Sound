@@ -83,6 +83,36 @@
     return String(value || '').replace(/\s+/gu, ' ').trim();
   }
 
+  // Whisper emits sound-event annotations ("[Music]", "(applause)", "[BLANK_AUDIO]", "♪")
+  // for non-speech audio. They must never be sent to the translator as speech.
+  const ANNOTATION = /\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|[♪♫]+/gu;
+  function stripAnnotations(value) {
+    return cleanText(String(value || '').replace(ANNOTATION, ' '));
+  }
+  function isNonSpeech(value) {
+    const rest = stripAnnotations(value).replace(/[\s.,!?…\-–—"'«»]+/gu, '');
+    return !rest || /^(music|silence|applause|noise|blankaudio)$/iu.test(rest);
+  }
+
+  // OPUS-MT (Marian) frequently stops after the first sentence of a multi-sentence input,
+  // silently dropping the rest of a 6-second fragment. Translate sentence by sentence.
+  const ABBREVIATION = /(?:^|\s)(?:mr|mrs|ms|dr|prof|st|vs|etc|e\.g|i\.e|no|inc|ltd|jr|sr)\.$/iu;
+  function splitSentences(value) {
+    const text = cleanText(value);
+    if (!text) return [];
+    const parts = [];
+    let current = '';
+    for (const piece of text.split(/(?<=[.!?…])\s+/u)) {
+      current = current ? current + ' ' + piece : piece;
+      if (!ABBREVIATION.test(current)) {
+        parts.push(current);
+        current = '';
+      }
+    }
+    if (current) parts.push(current);
+    return parts;
+  }
+
   function toSrt(segments) {
     return segments.filter((item) => cleanText(item.ru)).map((item, index) => {
       const start = Math.max(0, Number(item.start) || 0);
@@ -91,7 +121,10 @@
     }).join('\n\n') + (segments.some((item) => cleanText(item.ru)) ? '\n' : '');
   }
 
-  const api = { resampleMono, createStreamingResampler, clock, srtTime, cleanText, toSrt };
+  const api = {
+    resampleMono, createStreamingResampler, clock, srtTime, cleanText, toSrt,
+    stripAnnotations, isNonSpeech, splitSentences,
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SpeechLiveCore = api;
 })(typeof self !== 'undefined' ? self : globalThis);

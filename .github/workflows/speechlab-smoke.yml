@@ -43,6 +43,7 @@ jobs:
           python smoke_test.py
           python video_smoke_test.py
           python live_translate_browser_test.py
+          python live_translate_resilience_test.py
           python video_recorder_test.py
           python video_e2e_test.py
           python video_url_test.py
