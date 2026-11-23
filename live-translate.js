@@ -14,6 +14,7 @@
   const state = {
     ready: false, loading: false, active: false, starting: false, stopping: false, draining: false,
     stopPromise: null, drainResolve: null, resampler: null, worker: null,
+    prepareTimer: null,
     stream: null, context: null, source: null, processor: null, sink: null,
     samples: [], length: 0, session: 0, index: 0, inFlight: false,
     queue: null, dropped: 0, started: 0, elapsed: 0, timer: null,
@@ -66,6 +67,8 @@
           ui.diagnostic.hidden = false;
         }
       } else if (data.type === 'ready') {
+        clearTimeout(state.prepareTimer);
+        state.prepareTimer = null;
         state.loading = false;
         state.ready = true;
         status('Модели загружены. Теперь выбери вкладку Толка со звуком.', 'ГОТОВО');
@@ -76,6 +79,8 @@
         next();
       } else if (data.type === 'failure') {
         if (data.phase === 'init') {
+          clearTimeout(state.prepareTimer);
+          state.prepareTimer = null;
           state.loading = false;
           state.ready = false;
           showError(data.message);
@@ -92,6 +97,8 @@
     };
     worker.onerror = (event) => {
       event.preventDefault?.();
+      clearTimeout(state.prepareTimer);
+      state.prepareTimer = null;
       if (state.active) {
         // A dead worker cannot complete queued audio; avoid waiting for drain timeout.
         state.samples = [];
@@ -120,7 +127,23 @@
     buttons();
     const worker = ensureWorker();
     const webgpu = Boolean(await navigator.gpu?.requestAdapter?.().catch(() => null));
-    worker.postMessage({ type: 'init', webgpu });
+    state.prepareTimer = setTimeout(() => {
+      if (!state.loading) return;
+      worker.terminate();
+      if (state.worker === worker) state.worker = null;
+      state.loading = false;
+      state.ready = false;
+      showError('Модели не запустились за 15 минут. Проверь интернет, память и блокировку CDN/Hugging Face. Повтори подготовку моделей.');
+      buttons();
+    }, 15 * 60 * 1000);
+    try { worker.postMessage({ type: 'init', webgpu }); }
+    catch (e) {
+      clearTimeout(state.prepareTimer);
+      state.prepareTimer = null;
+      state.loading = false;
+      showError(String(e.message || e));
+      buttons();
+    }
   }
   function appendSegment(data) {
     const segment = { start: data.start, end: data.end, en: data.en, ru: data.ru };
@@ -362,6 +385,7 @@
       'width=900,height=240,resizable=yes,scrollbars=yes');
   });
   window.addEventListener('pagehide', () => {
+    clearTimeout(state.prepareTimer);
     if (state.active) void stop();
     state.worker?.terminate();
     state.channel?.close();
