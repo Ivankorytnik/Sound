@@ -34,6 +34,22 @@ const srt=core.toSrt([
 assert.match(srt,/1\n00:00:00,000 --> 00:00:02,500\nПривет!/);
 assert.match(srt,/2\n00:00:02,500 --> 00:00:04,200\nТест перевода/);
 assert.doesNotMatch(srt,/\n3\n/);
+// Whisper sound-event annotations must never be translated as speech.
+for (const text of ['[BLANK_AUDIO]', ' [Music]', '(upbeat music)', '♪ ♪', '*applause*', 'Music.', '', '  ...  ', '[ Silence ]']) {
+  assert.ok(core.isNonSpeech(text), 'Non-speech not detected: ' + JSON.stringify(text));
+}
+for (const text of ['Hello everyone.', 'We need the music license.', 'OK', '[Music] Let us start.']) {
+  assert.ok(!core.isNonSpeech(text), 'Speech wrongly rejected: ' + JSON.stringify(text));
+}
+assert.equal(core.stripAnnotations('[Music] Let us   start. (laughs)'), 'Let us start.');
+
+assert.deepEqual(core.splitSentences('The new office will open in March. Please send the report before Friday.'),
+  ['The new office will open in March.', 'Please send the report before Friday.']);
+assert.deepEqual(core.splitSentences('Ask Dr. Smith today! Is it ready? Yes… ok'),
+  ['Ask Dr. Smith today!', 'Is it ready?', 'Yes…', 'ok']);
+assert.deepEqual(core.splitSentences('  no punctuation here  '), ['no punctuation here']);
+assert.deepEqual(core.splitSentences(''), []);
+
 const page=fs.readFileSync('live-translate.html','utf8');
 for (const id of ['livePrepare','liveStart','liveStop','liveRu','liveEn',
   'liveTxt','liveSrt','liveCopy','liveVideo','liveLog','liveDropped']) {

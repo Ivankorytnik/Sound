@@ -20,3 +20,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Load and run real Whisper and English to Russian models
         run: python live_model_real_test.py
+      - name: Real end-to-end EN speech -> Whisper -> OPUS-MT -> RU (synthetic fixture)
+        run: python live_model_e2e_real_test.py
+      - name: Real worker with CDN and Hugging Face blocked
+        run: python live_model_offline_test.py
