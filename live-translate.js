@@ -34,7 +34,7 @@
     ui.stop.disabled = !state.active;
     const hasText = state.segments.length > 0;
     ui.copy.disabled = ui.txt.disabled = ui.srt.disabled = !hasText;
-    ui.clear.disabled = !hasText || state.active;
+    ui.clear.disabled = !hasText || state.active || state.stopping;
   }
   function elapsed() {
     return state.elapsed + (state.active ? (performance.now() - state.started) / 1000 : 0);
@@ -85,7 +85,14 @@
     };
     worker.onerror = (event) => {
       event.preventDefault?.();
-      if (state.active) void stop('Ошибка AI Worker. Запись прервана.');
+      if (state.active) {
+        // A dead worker cannot complete queued audio; avoid waiting for drain timeout.
+        state.samples = [];
+        state.length = 0;
+        state.queue = null;
+        state.inFlight = false;
+        void stop('Ошибка AI Worker. Запись прервана.');
+      }
       state.ready = false;
       state.loading = false;
       worker.terminate();
