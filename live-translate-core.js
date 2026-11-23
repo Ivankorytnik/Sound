@@ -24,6 +24,49 @@
     return output;
   }
 
+  // Maintain fractional sample phase across AudioContext blocks. Reset per capture.
+  function createStreamingResampler(sourceRate, targetRate = 16000) {
+    if (!Number.isFinite(sourceRate) || !Number.isFinite(targetRate) ||
+        sourceRate <= 0 || targetRate <= 0) throw new RangeError('Invalid sample rate');
+    const span = sourceRate / targetRate;
+    let inputPosition = 0;
+    let boundary = span;
+    let weighted = 0;
+    let covered = 0;
+    return {
+      push(input) {
+        if (!(input instanceof Float32Array)) throw new TypeError('Expected Float32Array');
+        const output = [];
+        for (let i = 0; i < input.length; i += 1) {
+          const end = inputPosition + 1;
+          let pos = inputPosition;
+          while (pos < end - 1e-10) {
+            const part = Math.max(0, Math.min(end, boundary) - pos);
+            if (part <= 1e-10) {
+              // Float rounding at a boundary.
+              output.push(weighted / Math.max(covered, 1e-10));
+              weighted = 0;
+              covered = 0;
+              boundary += span;
+              continue;
+            }
+            weighted += input[i] * part;
+            covered += part;
+            pos += part;
+            if (pos >= boundary - 1e-10) {
+              output.push(weighted / Math.max(covered, 1e-10));
+              weighted = 0;
+              covered = 0;
+              boundary += span;
+            }
+          }
+          inputPosition = end;
+        }
+        return Float32Array.from(output);
+      },
+    };
+  }
+
   function clock(seconds) {
     const total = Math.max(0, Math.floor(Number(seconds) || 0));
     return [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
@@ -48,7 +91,7 @@
     }).join('\n\n') + (segments.some((item) => cleanText(item.ru)) ? '\n' : '');
   }
 
-  const api = { resampleMono, clock, srtTime, cleanText, toSrt };
+  const api = { resampleMono, createStreamingResampler, clock, srtTime, cleanText, toSrt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SpeechLiveCore = api;
 })(typeof self !== 'undefined' ? self : globalThis);

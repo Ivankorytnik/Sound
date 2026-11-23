@@ -11,6 +11,18 @@ assert.equal(down.length,16000);
 near(down[200], Math.sin(2*Math.PI*400*(200*3+1)/48000), 0.005);
 assert.equal(core.resampleMono(new Float32Array([0.25,0.5]),16000)[1],0.5);
 assert.equal(core.resampleMono(new Float32Array(0),48000).length,0);
+
+// Streaming resampler must retain its phase across blocks (e.g. 44.1k -> 16k).
+const sourceRate = 44100;
+const input = Float32Array.from({length:sourceRate*3+317}, (_,i) => Math.sin(i*2*Math.PI*330/sourceRate));
+const expected = core.resampleMono(input,sourceRate);
+const streamResampler = core.createStreamingResampler(sourceRate);
+const parts=[];
+for(let i=0;i<input.length;i+=4096) parts.push(streamResampler.push(input.slice(i,i+4096)));
+const flattened = Float32Array.from(parts.flatMap(part=>Array.from(part)));
+assert.equal(flattened.length,expected.length,'Streaming conversion must not lose samples between blocks');
+for (let i=0;i<flattened.length;i+=223) near(flattened[i],expected[i],0.005);
+
 assert.throws(()=>core.resampleMono(oneSecond,0),RangeError);
 assert.equal(core.clock(3661),'01:01:01');
 assert.equal(core.srtTime(0.128),'00:00:00,128');

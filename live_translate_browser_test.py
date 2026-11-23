@@ -74,6 +74,18 @@ with sync_playwright() as p:
     page.locator("#liveStop").click()
     page.wait_for_function("!document.querySelector('#liveStart').disabled", timeout=10000)
     assert page.locator("#liveStart").is_enabled()
+    # Regression: starting a second capture must not mix old transcript timestamps.
+    page.locator("#liveStart").click()
+    page.wait_for_function("!document.querySelector('#liveStop').disabled", timeout=10000)
+    assert page.locator("#liveLog").locator(".live-line").count() == 0
+    # Wait for the audio callback to receive an actual partial chunk.
+    page.wait_for_timeout(1100)
+    # Stop before the first 6-second chunk: the final partial fragment must be translated.
+    page.locator("#liveStop").click()
+    page.wait_for_function("document.querySelector('#liveLog').children.length > 0", timeout=15000)
+    page.wait_for_function("!document.querySelector('#liveStart').disabled", timeout=15000)
+    assert page.locator("#liveLog").locator(".live-line").count() == 1
+    assert "Мы обсуждаем поставки" in page.locator("#liveRu").inner_text()
     assert not errors, errors
     page.evaluate("window.__testOscillator?.stop(); window.__testAudio?.close();")
     browser.close()
