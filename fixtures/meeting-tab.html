@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SpeechLab Meeting Tab</title>
+</head>
+<body>
+<p>Synthetic meeting tab for Speech Lab capture tests. No real meeting data.</p>
+<audio id="speech" src="./live-en-sample.wav" preload="auto"></audio>
+<script>
+  // Started by the test via window.play(); loops so capture always has speech.
+  window.play = () => { const a = document.getElementById('speech'); a.loop = true; return a.play(); };
+</script>
+</body>
+</html>

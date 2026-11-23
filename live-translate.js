@@ -444,5 +444,11 @@
       }
     };
   }
+  // Chrome unloads tabs under memory pressure (observed at 97 % RAM on a 7.4 GB laptop while
+  // models load). After such a reload explain the cause instead of a silent reset.
+  if (document.wasDiscarded) {
+    showError('Браузер выгрузил эту вкладку из-за нехватки памяти. Закрой лишние программы и вкладки, '
+      + 'добавь сайт в исключения «Экономии памяти» Chrome и подготовь модели снова.');
+  }
   buttons();
 })();
