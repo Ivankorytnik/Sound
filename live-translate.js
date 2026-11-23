@@ -6,6 +6,7 @@
     prepare: $('livePrepare'), start: $('liveStart'), stop: $('liveStop'),
     status: $('liveStatus'), error: $('liveError'), state: $('liveState'),
     duration: $('liveDuration'), dropped: $('liveDropped'), video: $('liveVideo'),
+    filtered: $('liveFiltered'), speechOnly: $('liveSpeechOnly'),
     ru: $('liveRu'), en: $('liveEn'), log: $('liveLog'), diagnostic: $('liveDiagnostic'), copy: $('liveCopy'),
     txt: $('liveTxt'), srt: $('liveSrt'), clear: $('liveClear'), popout: $('livePopout'),
   };
@@ -22,7 +23,7 @@
     prepareTimer: null, watchdog: null,
     stream: null, context: null, source: null, processor: null, sink: null,
     samples: [], length: 0, session: 0, index: 0, inFlight: false,
-    queue: null, dropped: 0, started: 0, elapsed: 0, timer: null,
+    queue: null, dropped: 0, filtered: 0, started: 0, elapsed: 0, timer: null,
     segments: [], channel: null,
   };
 
@@ -48,6 +49,7 @@
   function updateClock() {
     ui.duration.textContent = core.clock(elapsed());
     ui.dropped.textContent = String(state.dropped);
+    ui.filtered.textContent = String(state.filtered);
   }
   function showError(message) {
     error(message);
@@ -96,7 +98,7 @@
   }
   function ensureWorker() {
     if (state.worker) return state.worker;
-    const worker = new Worker('./live-translate-worker.js?build=20261123-audit', { type: 'module' });
+    const worker = new Worker('./live-translate-worker.js?build=20261123-speech', { type: 'module' });
     worker.onmessage = ({ data = {} }) => {
       if (worker !== state.worker) return;
       if (state.inFlight) armWatchdog();
@@ -109,6 +111,13 @@
           ui.diagnostic.textContent = 'Проверка модели EN → RU: «' + String(data.en || '') + '» → «' + translated + '» (' + String(data.model || 'AI') + ').';
           ui.diagnostic.hidden = false;
         }
+      } else if (data.type === 'vad') {
+        // The detector is optional: without it speech-only still filters recognised text.
+        const note = data.ok
+          ? ' Детектор речи включён.'
+          : ' Детектор речи недоступен: в режиме «Только речь» работает только фильтр текста.';
+        ui.diagnostic.textContent = (ui.diagnostic.textContent || '') + note;
+        ui.diagnostic.hidden = false;
       } else if (data.type === 'ready') {
         clearTimeout(state.prepareTimer);
         state.prepareTimer = null;
@@ -118,6 +127,8 @@
         buttons();
       } else if (data.type === 'segment') {
         if ((!state.active && !state.draining) || data.session !== state.session) return;
+        // Filtered fragments never reach captions, the log, TXT or SRT; only the counter.
+        if (data.silent && data.filtered) { state.filtered += 1; updateClock(); }
         if (!data.silent && data.ru) appendSegment(data);
         next();
       } else if (data.type === 'failure') {
@@ -225,6 +236,7 @@
     state.worker.postMessage({
       type: 'infer', session: state.session, index: item.index,
       start: item.start, end: item.end, audioBuffer: item.audio.buffer,
+      speechOnly: ui.speechOnly.checked,
     }, [item.audio.buffer]);
     armWatchdog();
   }
@@ -309,6 +321,7 @@
       state.inFlight = false;
       state.queue = null;
       state.dropped = 0;
+      state.filtered = 0;
       state.samples = [];
       state.length = 0;
       processor.onaudioprocess = (event) => {
@@ -444,6 +457,15 @@
       }
     };
   }
+  // Speech-only is on by default; the choice is a per-viewer convenience only.
+  const SPEECH_ONLY_KEY = 'speechlab-live-speech-only';
+  try {
+    if (localStorage.getItem(SPEECH_ONLY_KEY) === 'off') ui.speechOnly.checked = false;
+  } catch (_) { /* storage unavailable: keep the default */ }
+  ui.speechOnly.addEventListener('change', () => {
+    try { localStorage.setItem(SPEECH_ONLY_KEY, ui.speechOnly.checked ? 'on' : 'off'); } catch (_) { /* ignore */ }
+  });
+
   // Chrome unloads tabs under memory pressure (observed at 97 % RAM on a 7.4 GB laptop while
   // models load). After such a reload explain the cause instead of a silent reset.
   if (document.wasDiscarded) {

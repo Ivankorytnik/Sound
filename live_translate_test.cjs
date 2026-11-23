@@ -50,6 +50,41 @@ assert.deepEqual(core.splitSentences('Ask Dr. Smith today! Is it ready? Yes… o
 assert.deepEqual(core.splitSentences('  no punctuation here  '), ['no punctuation here']);
 assert.deepEqual(core.splitSentences(''), []);
 
+// ---- Speech-only mode ----
+const strong = { speech: 0.45, confident: 0.32, mean: 0.9, max: 1 };   // measured: one-word "Yes."
+const humming = { speech: 2.24, confident: 0.1, mean: 0.65, max: 0.94 }; // measured: wordless singing
+const music = { speech: 2.56, confident: 0, mean: 0.47, max: 0.66 };     // measured: music bed
+assert.ok(core.hasEnoughSpeech(strong), 'short clear reply must reach Whisper');
+assert.ok(!core.hasEnoughSpeech(music), 'music without a confident voice skips Whisper');
+assert.ok(!core.hasEnoughSpeech({ speech: 0.03, confident: 0, mean: 0.4, max: 0.4 }));
+assert.ok(core.hasEnoughSpeech(null), 'without a detector nothing is skipped');
+assert.ok(!core.isWeakVoice(strong) && core.isWeakVoice(humming) && !core.isWeakVoice(null));
+// Requirement 4: phrases that MENTION sounds or actions are never removed.
+for (const text of ['I can hear the water running in the kitchen.', 'The music license expires in May.',
+  'Footsteps in the corridor distracted me.', 'Send it to support at example.com.', 'Applause for the team, well done!']) {
+  for (const vad of [strong, humming, null]) {
+    assert.equal(core.classifyTranscript(text, vad).keep, true, 'Meaningful phrase removed: ' + text);
+  }
+}
+// Sound descriptions and hallucinations are removed only with weak voice evidence.
+for (const text of ['Birds chirping.', 'Water running', 'Soft music playing.', 'Footsteps.', 'Dog barking.', 'Door closes.']) {
+  assert.ok(core.isSoundDescription(text), text);
+  assert.equal(core.classifyTranscript(text, humming).reason, 'sound', text);
+  assert.equal(core.classifyTranscript(text, strong).keep, true, 'clear voice keeps: ' + text);
+}
+for (const text of ['Thanks for watching!', 'Thank you.', 'you', 'Please subscribe.', 'Bye-bye.']) {
+  assert.equal(core.classifyTranscript(text, humming).reason, 'hallucination', text);
+}
+assert.equal(core.classifyTranscript('Thank you.', strong).keep, true, 'clearly spoken thanks is kept');
+assert.equal(core.classifyTranscript('Thank you for the update on the budget.', humming).keep, true);
+assert.equal(core.classifyTranscript('you you you you you', humming).reason, 'repetition');
+assert.equal(core.classifyTranscript('No, no, no, that is wrong.', humming).keep, true);
+assert.equal(core.classifyTranscript('Subtitles by the Amara.org community', strong).reason, 'credits');
+assert.equal(core.classifyTranscript('[Music]', strong).reason, 'annotation');
+// Raw mode (speech-only OFF) keeps everything except pure annotations.
+assert.equal(core.classifyTranscript('Thanks for watching!', humming, false).keep, true);
+assert.equal(core.classifyTranscript('[Music]', humming, false).keep, false);
+
 const page=fs.readFileSync('live-translate.html','utf8');
 for (const id of ['livePrepare','liveStart','liveStop','liveRu','liveEn',
   'liveTxt','liveSrt','liveCopy','liveVideo','liveLog','liveDropped']) {

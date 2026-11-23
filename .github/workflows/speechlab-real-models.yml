@@ -24,3 +24,5 @@ jobs:
         run: python live_model_e2e_real_test.py
       - name: Real worker with CDN and Hugging Face blocked
         run: python live_model_offline_test.py
+      - name: Speech-only mode with real Whisper, Silero VAD and OPUS-MT
+        run: python live_speech_only_real_test.py

@@ -1,5 +1,5 @@
 import { createResilientTranscriber } from './transcription-runtime.js?build=v1.6.4-20261021-01';
-import './live-translate-core.js?build=20261123-audit';
+import './live-translate-core.js?build=20261123-speech';
 
 const core = self.SpeechLiveCore;
 const TINY = 'onnx-community/whisper-tiny';
@@ -102,6 +102,7 @@ async function initialize(webgpu) {
       }
     }
     if (!translator) throw new Error('Не удалось запустить перевод EN → RU. ' + failures.join(' | '));
+    await loadVad();
     stage = 'ready';
     notify('ready');
   } catch (error) {
@@ -120,6 +121,67 @@ async function initialize(webgpu) {
   }
 }
 
+// ---- Voice activity detection (Silero VAD, MIT, ~2 MB ONNX, runs locally) -------------
+// Optional: if it cannot load, live translation still works and "speech only" falls back
+// to text filtering. Never blocks preparation.
+const VAD_WINDOW = 512; // 32 ms at 16 kHz, the window size Silero v5 expects
+const VAD_THRESHOLD = 0.35; // lower than the usual 0.5 so quiet or distant voices count
+let vad = null;
+
+async function loadVad() {
+  try {
+    notify('status', { message: 'Загружаю детектор речи (Silero VAD)…' });
+    const { AutoModel, Tensor } = await import(
+      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm'
+    );
+    const model = await AutoModel.from_pretrained('onnx-community/silero-vad', {
+      config: { model_type: 'custom' }, dtype: 'fp32', device: 'wasm',
+    });
+    vad = { model, Tensor };
+    const probe = await speechActivity(new Float32Array(16000));
+    if (!probe || !Number.isFinite(probe.max)) throw new Error('VAD вернул некорректный результат.');
+    notify('vad', { ok: true });
+  } catch (error) {
+    try { await vad?.model?.dispose?.(); } catch (_) { /* best effort */ }
+    vad = null;
+    notify('vad', { ok: false, message: String(error?.message || error) });
+  }
+}
+
+// Seconds of detected speech and peak speech probability for one fragment.
+async function speechActivity(audio) {
+  if (!vad) return null;
+  const { model, Tensor } = vad;
+  // Normalise loudness first: the detector should judge "is it a voice", not "is it loud",
+  // so quiet participants are not discarded. Gain is capped to avoid inflating hiss.
+  let peak = 0;
+  for (let i = 0; i < audio.length; i += 1) peak = Math.max(peak, Math.abs(audio[i]));
+  const gain = peak > 1e-4 ? Math.min(0.5 / peak, 30) : 1;
+  const sr = new Tensor('int64', BigInt64Array.from([16000n]), []);
+  let state = new Tensor('float32', new Float32Array(2 * 128), [2, 1, 128]);
+  let speechWindows = 0;
+  let confidentWindows = 0;
+  let sum = 0;
+  let max = 0;
+  for (let offset = 0; offset + VAD_WINDOW <= audio.length; offset += VAD_WINDOW) {
+    const frame = new Float32Array(VAD_WINDOW);
+    for (let i = 0; i < VAD_WINDOW; i += 1) frame[i] = audio[offset + i] * gain;
+    const output = await model({ input: new Tensor('float32', frame, [1, VAD_WINDOW]), sr, state });
+    state = output.stateN;
+    const probability = Number(output.output.data[0]);
+    if (probability >= VAD_THRESHOLD) { speechWindows += 1; sum += probability; }
+    if (probability >= 0.9) confidentWindows += 1;
+    if (probability > max) max = probability;
+  }
+  const seconds = (windows) => Math.round(windows * VAD_WINDOW / 16000 * 100) / 100;
+  return {
+    speech: seconds(speechWindows),
+    confident: seconds(confidentWindows),
+    mean: speechWindows ? Math.round(sum / speechWindows * 100) / 100 : 0,
+    max: Math.round(max * 100) / 100,
+  };
+}
+
 async function translateSentences(en) {
   const sentences = core.splitSentences(en);
   const parts = [];
@@ -134,6 +196,7 @@ async function translateSentences(en) {
 
 async function infer(message) {
   const { session, index, start, end, audioBuffer } = message;
+  const speechOnly = message.speechOnly !== false;
   if (stage !== 'ready') {
     notify('failure', { phase: 'infer', session, index, message: 'Сначала загрузи модели.' });
     return;
@@ -149,24 +212,37 @@ async function infer(message) {
       throw new Error('Некорректный аудиофрагмент.');
     }
     const audio = new Float32Array(audioBuffer);
+    // Digital silence never needs a model. The gate is unchanged from before, so quiet
+    // speech is not affected; the voice detector makes the finer decision.
     if (level(audio) < 0.0015) {
       notify('segment', { session, index, start, end, silent: true });
+      return;
+    }
+    const activity = speechOnly ? await speechActivity(audio) : null;
+    if (speechOnly && !core.hasEnoughSpeech(activity)) {
+      // No voice: skip Whisper entirely (saves ~2 s CPU and removes hallucinations).
+      consecutiveFailures = 0;
+      notify('segment', { session, index, start, end, silent: true, filtered: 'vad', vad: activity });
       return;
     }
     const result = await recognizer.transcribe(audio, {
       task: 'transcribe', language: 'english', return_timestamps: false,
       do_sample: false, num_beams: 1, max_length: 224,
     });
-    if (core.isNonSpeech(result?.text)) {
+    const decision = core.classifyTranscript(result?.text, activity, speechOnly);
+    if (!decision.keep) {
       consecutiveFailures = 0;
-      notify('segment', { session, index, start, end, silent: true });
+      notify('segment', {
+        session, index, start, end, silent: true,
+        filtered: speechOnly ? decision.reason : '', vad: activity, raw: tidy(result?.text),
+      });
       return;
     }
-    const en = core.stripAnnotations(result?.text);
+    const en = decision.text;
     const ru = await translateSentences(en);
     if (!ru) throw new Error('Модель вернула пустой перевод.');
     consecutiveFailures = 0;
-    notify('segment', { session, index, start, end, en, ru });
+    notify('segment', { session, index, start, end, en, ru, vad: activity });
   } catch (error) {
     consecutiveFailures += 1;
     // The resilient runtime never reuses a failed backend; once every candidate failed it

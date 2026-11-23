@@ -94,6 +94,90 @@
     return !rest || /^(music|silence|applause|noise|blankaudio)$/iu.test(rest);
   }
 
+  // ---- "Speech only" mode -------------------------------------------------------------
+  // Every rule below looks at the WHOLE recognised utterance. A participant's sentence that
+  // merely mentions a sound ("I can hear the water running") is never matched.
+  const SOUND_WORDS = new Set(('music song singing humming whistling water rain wind thunder '
+    + 'storm birds bird chirping tweeting dog dogs barking cat meowing footsteps steps walking '
+    + 'applause clapping claps laughter laughing laughs cheering crowd coughing cough coughs '
+    + 'sneezing breathing sighs sigh sighing typing keyboard clicking click knocking knock door '
+    + 'bell bells phone ringing ring beeping beep static noise silence engine traffic car siren '
+    + 'splashing running dripping pouring buzzing hum chime chimes gunshot explosion whoosh '
+    + 'rustling paper chewing snoring crying baby').split(' '));
+  const SOUND_FILLERS = new Set(('the a an of sound sounds soft loud gentle quiet distant faint '
+    + 'upbeat dramatic intense light heavy background in and with playing plays continues '
+    + 'continuing starts stops closes opens slams instrumental').split(' '));
+  // Phrases Whisper is known to invent on silence, noise or music (YouTube/subtitle artefacts).
+  const HALLUCINATIONS = new Set([
+    'you', 'thank you', 'thank you very much', 'thank you so much', 'thanks', 'thanks for watching',
+    'thank you for watching', 'thank you so much for watching', 'thanks for watching and see you next time',
+    'please subscribe', 'like and subscribe', 'subscribe to my channel', 'bye', 'bye bye', 'bye-bye',
+    'see you next time', "i'll see you next time", 'see you in the next video', 'so', 'oh', 'hmm',
+    'uh', 'um', 'okay', 'ok', 'yeah', 'the end',
+  ]);
+  // Subtitle credits are never spoken in a meeting: dropped regardless of audio evidence.
+  const CREDITS = /\b(subtitles? (by|made by|created by)|amara\.org|transcribed by|translated by|captions? by)/iu;
+
+  function normalisePhrase(value) {
+    return stripAnnotations(value).toLowerCase().replace(/[.,!?…"«»:;]+/gu, ' ')
+      .replace(/\s+/gu, ' ').trim();
+  }
+  function isSoundDescription(value) {
+    const words = normalisePhrase(value).split(' ').filter(Boolean);
+    if (!words.length || words.length > 5) return false;
+    let sound = 0;
+    for (const word of words) {
+      if (SOUND_WORDS.has(word)) sound += 1;
+      else if (!SOUND_FILLERS.has(word)) return false;
+    }
+    return sound > 0;
+  }
+  function isHallucinationPhrase(value) {
+    return HALLUCINATIONS.has(normalisePhrase(value));
+  }
+  function isRepetitionLoop(value) {
+    const words = normalisePhrase(value).split(' ').filter(Boolean);
+    if (words.length < 4) return false;
+    const counts = new Map();
+    for (const word of words) counts.set(word, (counts.get(word) || 0) + 1);
+    return Math.max(...counts.values()) / words.length >= 0.6;
+  }
+
+  // `vad` = { speech, confident, mean, max }: seconds with p >= 0.35, seconds with p >= 0.9,
+  // mean p over speech windows, peak p. Thresholds measured with real Silero on fixtures:
+  // every speech sample (incl. -30 dB, over music/noise, one-word "Yes.") had mean >= 0.90
+  // and confident >= 0.32 s; wordless humming 0.64 / 0.10 s; music 0.47 / 0 s.
+  const VAD_WEAK_MEAN = 0.8;
+  const VAD_WEAK_CONFIDENT_SECONDS = 0.25;
+  function isWeakVoice(vad) {
+    return Boolean(vad) && (Number(vad.mean) < VAD_WEAK_MEAN
+      || Number(vad.confident) < VAD_WEAK_CONFIDENT_SECONDS);
+  }
+
+  // Speech-only decision AFTER Whisper. Ambiguous phrases are removed only when the voice
+  // detector also saw a weak voice, so a clearly spoken "Thank you." is kept.
+  function classifyTranscript(text, vad, speechOnly = true) {
+    if (isNonSpeech(text)) return { keep: false, reason: 'annotation' };
+    const clean = stripAnnotations(text);
+    if (!speechOnly) return { keep: true, text: clean };
+    if (CREDITS.test(clean)) return { keep: false, reason: 'credits' };
+    const weak = isWeakVoice(vad);
+    if (weak && isSoundDescription(clean)) return { keep: false, reason: 'sound' };
+    if (weak && isHallucinationPhrase(clean)) return { keep: false, reason: 'hallucination' };
+    if (weak && isRepetitionLoop(clean)) return { keep: false, reason: 'repetition' };
+    return { keep: true, text: clean };
+  }
+
+  // Speech-only decision BEFORE Whisper: skip fragments where the detector found (almost)
+  // no voice. Limits sit ~3x below the weakest real speech measured (one-word "Yes.":
+  // 0.45 s / 0.32 s confident), so short replies pass. Without a detector nothing is skipped.
+  const VAD_MIN_SPEECH_SECONDS = 0.2;
+  const VAD_MIN_CONFIDENT_SECONDS = 0.1;
+  function hasEnoughSpeech(vad) {
+    return !vad || (Number(vad.speech) >= VAD_MIN_SPEECH_SECONDS
+      && Number(vad.confident) >= VAD_MIN_CONFIDENT_SECONDS);
+  }
+
   // OPUS-MT (Marian) frequently stops after the first sentence of a multi-sentence input,
   // silently dropping the rest of a 6-second fragment. Translate sentence by sentence.
   const ABBREVIATION = /(?:^|\s)(?:mr|mrs|ms|dr|prof|st|vs|etc|e\.g|i\.e|no|inc|ltd|jr|sr)\.$/iu;
@@ -124,6 +208,8 @@
   const api = {
     resampleMono, createStreamingResampler, clock, srtTime, cleanText, toSrt,
     stripAnnotations, isNonSpeech, splitSentences,
+    isSoundDescription, isHallucinationPhrase, isRepetitionLoop, classifyTranscript, hasEnoughSpeech,
+    isWeakVoice,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SpeechLiveCore = api;
