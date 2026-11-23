@@ -28,3 +28,9 @@
 .live-log-heading { margin:24px 0 10px; }
 @media(max-width:900px) { .live-page .video-grid {grid-template-columns:1fr;} .live-page .video-topbar {flex-wrap:wrap;} }
 @media(max-width:480px) { .live-metrics {grid-template-columns:1fr 1fr;} .live-buttons button {width:100%;} }
+
+.video-live-entry { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:15px; padding:18px 22px; border:1px solid rgba(49,213,255,.35); border-radius:16px; background:rgba(49,213,255,.055); margin:0 0 20px; }
+.video-live-entry strong { color:var(--cyan); font-size:12px; letter-spacing:.05em; }
+.video-live-entry p { margin:7px 0 0; color:var(--muted); line-height:1.5; font-size:13px; }
+.video-live-entry a { background:var(--cyan); color:#03212d; font-size:12px; font-weight:900; border-radius:10px; padding:14px 17px; text-decoration:none; white-space:nowrap; }
+.video-live-entry a:hover { filter:brightness(1.1); }
