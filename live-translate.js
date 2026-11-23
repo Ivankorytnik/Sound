@@ -296,7 +296,10 @@
           });
           if (!completed) {
             state.dropped += Number(state.inFlight) + Number(Boolean(state.queue));
-            error('Некоторые последние фразы не удалось завершить за 30 секунд.');
+            state.worker?.terminate();
+            state.worker = null;
+            state.ready = false;
+            error('Не все последние фразы обработаны. AI-модель остановлена; перед новым запуском подготовь модели снова.');
           }
         }
       } finally {
