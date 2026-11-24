@@ -9,7 +9,7 @@
   const style = document.createElement('style');
   style.textContent = `
     .meeting-btn{background:var(--cyan,#31d5ff)!important;color:#05202a!important;font-weight:700!important;flex:1 1 100%!important}
-    .meeting-report{margin-top:12px;border:1px solid var(--line-strong, #35525f);background:var(--surface,#0c1b26);border-radius:12px;padding:14px;min-width:0}
+    .meeting-report{flex-shrink:0;max-height:55dvh;overflow:auto;margin-top:12px;border:1px solid var(--line-strong, #35525f);background:var(--surface,#0c1b26);border-radius:12px;padding:14px;min-width:0}
     .meeting-report[hidden]{display:none!important}
     .meeting-report h3{font-size:15px;margin:0 0 6px}
     .meeting-report p{margin:4px 0 12px;color:var(--muted,#9eb4c2);font-size:12px}
@@ -119,12 +119,18 @@
     warning.textContent = message;
   }
   function refreshAvailability() {
-    button.disabled = transcript.value.trim().length < 25;
+    const busy = byId('transcribeBtnText')?.textContent?.includes('ОСТАНОВИТЬ');
+    const hidden = byId('resultBlock')?.classList.contains('hidden');
+    button.disabled = busy || hidden || transcript.value.trim().length < 25;
+    button.hidden = !!hidden;
+    if (hidden || busy) { panel.hidden = true; originalTranscript = ''; }
+    copy.disabled = save.disabled = transcript.value.trim() !== originalTranscript;
     if (!panel.hidden && transcript.value.trim() !== originalTranscript) {
       alertStatus('Текст стенограммы изменён. Нажмите кнопку ещё раз для обновления резюме: текущие правки резюме будут заменены.');
     }
   }
   button.addEventListener('click', () => {
+    if (button.disabled) return;
     const source = transcript.value.trim();
     const data = analyzer.analyzeTranscript(source);
     if (data.error) { alertStatus(data.error); return; }
@@ -133,6 +139,7 @@
     taskList.replaceChildren();
     data.tasks.forEach(task => addTask(task));
     panel.hidden = false;
+    refreshAvailability();
     alertStatus((data.truncated ? 'Анализ ограничен первыми 400 000 символами. ' : '') +
       (data.tasks.length ? 'Проверьте задачи, ответственных и сроки. Неявные поручения могут быть пропущены.' : 'Явных поручений не найдено. Добавьте их вручную при необходимости.'));
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -149,7 +156,7 @@
     const blob = new Blob([compiledText()], { type: 'text/plain;charset=utf-8' });
     try {
       if (typeof window.SpeechLabFiles?.save === 'function') {
-        await window.SpeechLabFiles.save(blob, 'meeting_summary.txt');
+        await window.SpeechLabFiles.save(blob, 'meeting_summary.txt', { suffix: '_meeting_summary' });
       } else downloadFallback(blob, 'meeting_summary.txt');
       alertStatus('Файл подготовлен к сохранению. Проверьте папку загрузок или папку встречи.');
     } catch {
@@ -169,6 +176,7 @@
   observer.observe(transcript, { attributes: true, attributeFilter: ['value'] });
   const recognition = byId('progressWrap');
   if (recognition) observer.observe(recognition, { childList: true, subtree: true });
-  setInterval(refreshAvailability, 1600);
+  observer.observe(byId('transcribeBtnText'), {childList:true,subtree:true,characterData:true});
+  observer.observe(byId('wordCount'), {childList:true,subtree:true,characterData:true});
   refreshAvailability();
 })();
