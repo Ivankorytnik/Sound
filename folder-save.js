@@ -157,10 +157,11 @@
     });
   }
 
-  function saveBlobToFolder(blob, requestedName) {
+  function saveBlobToFolder(blob, requestedName, options = {}) {
     const root = selectedDirectory, context = sourceContext;
     const title = meetingTitle(context, transcriptText());
-    const requested = title + extensionOf(requestedName);
+    const suffix = options.suffix === '_meeting_summary' ? options.suffix : '';
+    const requested = title + suffix + extensionOf(requestedName);
     return enqueueSave(async () => {
       if (!root) return fallbackDownload(blob, requested);
       try {
